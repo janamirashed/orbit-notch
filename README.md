@@ -21,11 +21,15 @@ media controls, a calendar, notification history and a temporary files shelf.
 
     git clone https://github.com/Unmade760/orbit-notch.git
     cd orbit-notch
-
     make install
+
+GNOME Shell only picks up newly installed extensions at login, so log out
+and back in, then run:
+
     gnome-extensions enable orbit@unmade.space
 
-Log out and back in on Wayland after code changes.
+The same applies after updating: log out and back in for code changes to
+take effect on Wayland.
 
 ## Themes
 
