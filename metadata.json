@@ -1,0 +1,10 @@
+{
+    "uuid": "orbit@unmade.space",
+    "name": "Orbit Notch",
+    "description": "A pill at the top of your screen that expands into a hub: media controls with album art and scrubbing, calendar and events, notification peeks and history, a temporary files shelf and synced lyrics. Spring-animated and theme-able, with optional background blur.",
+    "shell-version": ["49", "50"],
+    "url": "https://github.com/Unmade760/orbit-notch",
+    "version-name": "1.0.0",
+    "settings-schema": "org.gnome.shell.extensions.orbit",
+    "gettext-domain": "orbit-notch"
+}

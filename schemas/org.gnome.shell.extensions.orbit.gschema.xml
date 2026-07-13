@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.orbit"
+          path="/org/gnome/shell/extensions/orbit/">
+
+    <key name="theme" type="s">
+      <default>'notch'</default>
+      <summary>Collapsed theme</summary>
+      <description>Theme id used for the collapsed pill: a built-in ('notch', 'gnome', 'blur') or the id of a user theme JSON in ~/.config/orbit/themes/.</description>
+    </key>
+
+    <key name="theme-open" type="s">
+      <default>'same'</default>
+      <summary>Expanded theme</summary>
+      <description>Theme id used for the expanded notch and notification banner, or 'same' to follow the collapsed theme. The fill crossfades between the two during the open/close animation.</description>
+    </key>
+
+    <key name="closed-width" type="i">
+      <default>200</default>
+      <range min="120" max="500"/>
+      <summary>Closed pill width</summary>
+      <description>Width of the notch in its collapsed (idle) state, in pixels.</description>
+    </key>
+
+    <key name="closed-height" type="i">
+      <default>32</default>
+      <range min="20" max="48"/>
+      <summary>Closed pill height</summary>
+      <description>Height of the notch in its collapsed state, in pixels. Normally overridden to match the top bar height.</description>
+    </key>
+
+    <key name="open-width" type="i">
+      <default>700</default>
+      <range min="500" max="1200"/>
+      <summary>Expanded width</summary>
+      <description>Width of the notch when fully expanded, in pixels.</description>
+    </key>
+
+    <key name="open-height" type="i">
+      <default>232</default>
+      <range min="160" max="400"/>
+      <summary>Expanded height</summary>
+      <description>Height of the notch when fully expanded, in pixels.</description>
+    </key>
+
+    <key name="notif-ignore-apps" type="as">
+      <default>['wl-clipboard']</default>
+      <summary>Ignored notification apps</summary>
+      <description>Notifications whose app name matches an entry (case-insensitive) are never peeked or listed by the notch.</description>
+    </key>
+
+    <key name="notif-width" type="i">
+      <default>460</default>
+      <range min="300" max="700"/>
+      <summary>Notification banner width</summary>
+      <description>Width of the transient notification peek banner, in pixels.</description>
+    </key>
+
+    <key name="lyrics-width" type="i">
+      <default>450</default>
+      <range min="300" max="700"/>
+      <summary>Lyrics pill width</summary>
+      <description>Width of the collapsed pill while lyrics mode is showing synced lyrics, in pixels.</description>
+    </key>
+
+    <key name="open-on-hover" type="b">
+      <default>true</default>
+      <summary>Expand on hover</summary>
+      <description>Expand the notch automatically when the pointer hovers it.</description>
+    </key>
+
+    <key name="hover-open-delay-ms" type="i">
+      <default>250</default>
+      <range min="0" max="2000"/>
+      <summary>Hover open delay</summary>
+      <description>How long the pointer must dwell on the notch before it expands, in milliseconds. Prevents accidental activation when the cursor merely passes through; 0 expands immediately. Clicking always opens instantly.</description>
+    </key>
+
+    <key name="hover-close-delay-ms" type="i">
+      <default>120</default>
+      <range min="0" max="2000"/>
+      <summary>Hover close delay</summary>
+      <description>How long after the pointer leaves before the notch collapses, in milliseconds. A small debounce stops the notch snapping shut when the cursor briefly clips its edge.</description>
+    </key>
+
+    <key name="hover-hint" type="b">
+      <default>true</default>
+      <summary>Pressure hint</summary>
+      <description>Subtly swell the closed pill while the hover-open delay counts down, acknowledging the hover before the notch commits to expanding.</description>
+    </key>
+
+    <key name="accent-from-art" type="b">
+      <default>true</default>
+      <summary>Tint from album art</summary>
+      <description>Derive an accent colour from the current album art and tint the progress bar with it.</description>
+    </key>
+
+    <key name="show-visualizer" type="b">
+      <default>true</default>
+      <summary>Closed-state activity</summary>
+      <description>Show album art and a live Cava equaliser on the closed pill while media is playing.</description>
+    </key>
+
+    <key name="visualizer-bars" type="i">
+      <default>8</default>
+      <range min="1" max="32"/>
+      <summary>Visualizer bar count</summary>
+      <description>Number of bars in the Cava-driven equaliser.</description>
+    </key>
+
+    <key name="visualizer-bar-width" type="i">
+      <default>1</default>
+      <range min="1" max="8"/>
+      <summary>Visualizer bar width</summary>
+      <description>Width of each equaliser bar, in pixels.</description>
+    </key>
+
+    <key name="enable-gradient" type="b">
+      <default>true</default>
+      <summary>Animated album-art gradient</summary>
+      <description>Fill the open popup with a slowly-moving gradient derived from the album art.</description>
+    </key>
+
+    <key name="enable-notifications" type="b">
+      <default>true</default>
+      <summary>Notification peeks</summary>
+      <description>Briefly expand the notch to show incoming notifications.</description>
+    </key>
+
+    <key name="notif-peek-seconds" type="i">
+      <default>2</default>
+      <range min="1" max="15"/>
+      <summary>Notification peek duration</summary>
+      <description>How long the notification peek stays open, in seconds.</description>
+    </key>
+
+    <key name="enable-shelf" type="b">
+      <default>true</default>
+      <summary>Files shelf</summary>
+      <description>Show a temporary files shelf; expand the notch when files are dragged onto it.</description>
+    </key>
+
+    <key name="enable-lyrics" type="b">
+      <default>true</default>
+      <summary>Synced lyrics</summary>
+      <description>Fetch synced lyrics for the playing song and show a lyrics button.</description>
+    </key>
+
+    <key name="lyrics-mode" type="b">
+      <default>false</default>
+      <summary>Lyrics mode</summary>
+      <description>Persisted state of lyrics mode: when on, the collapsed notch widens to show album art, scrolling lyrics and a visualizer.</description>
+    </key>
+
+  </schema>
+</schemalist>
