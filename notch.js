@@ -367,10 +367,7 @@ class OrbitNotch extends St.Widget {
         this._closedLayer.add_child(this._closedDot);
 
         this._closedLayer.add_child(new St.Widget({ x_expand: true }));
-        this._closedTime = new St.Label({
-            style_class: 'orbit-closed-time', y_align: Clutter.ActorAlign.CENTER, visible: false });
-        this._closedLayer.add_child(this._closedTime);
-        this._closedLayer.add_child(new St.Widget({ x_expand: true }));
+        this._closedTime = null;
         this._updateDateTime();
 
         this._vis = new OrbitVisualizer(this._settings);
