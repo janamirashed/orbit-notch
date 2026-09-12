@@ -22,9 +22,9 @@ export default class OrbitExtension extends Extension {
 
         this._dateMenu = null;
 
-        this._applyBannerBlock();
+        this._suppressSystemBanners();
         this._notifToggleId = this._settings.connect('changed::enable-notifications',
-            () => this._applyBannerBlock());
+            () => this._suppressSystemBanners());
 
         this._place();
         this._monitorsId = Main.layoutManager.connect('monitors-changed', () => this._place());
@@ -107,9 +107,19 @@ export default class OrbitExtension extends Extension {
         ];
 
         const parseOsdCall = (icon, level) => {
-            const name = typeof icon?.icon_name === 'string'
-                ? icon.icon_name
-                : (icon?.get_icon_name?.() ?? '');
+            // GNOME passes Gio.ThemedIcon (has get_names()), not a plain string.
+            // Fall through multiple APIs until we get something.
+            let name = '';
+            if (icon) {
+                if (typeof icon.icon_name === 'string' && icon.icon_name)
+                    name = icon.icon_name;                          // St.Icon / plain obj
+                else if (typeof icon.get_names === 'function')
+                    name = icon.get_names()?.[0] ?? '';             // Gio.ThemedIcon ← real path
+                else if (typeof icon.get_icon_name === 'function')
+                    name = icon.get_icon_name() ?? '';
+                else if (typeof icon.to_string === 'function')
+                    name = icon.to_string() ?? '';
+            }
             for (const { re, type } of hudIconPatterns) {
                 if (re.test(name)) return { type, value: level != null ? level / 100 : null };
             }
@@ -151,9 +161,35 @@ export default class OrbitExtension extends Extension {
         if (this._origOsdShowAll) { osd.showAll = this._origOsdShowAll; this._origOsdShowAll = null; }
     }
 
-    _applyBannerBlock() {
-        if (Main.messageTray)
-            Main.messageTray.bannerBlocked = this._settings.get_boolean('enable-notifications');
+    _suppressSystemBanners() {
+        const enabled = this._settings.get_boolean('enable-notifications');
+        const tray = Main.messageTray;
+        if (!tray) return;
+
+        if (enabled) {
+            // Block GNOME's floating banner in two ways for robustness across versions:
+            // 1. The documented property (GNOME <45)
+            tray.bannerBlocked = true;
+
+            // 2. Patch _showNotification directly (GNOME 45+ redesign)
+            if (tray._showNotification && !this._origShowNotif) {
+                this._origShowNotif = tray._showNotification.bind(tray);
+                // Suppress only the *banner popup* — notification still lands in tray
+                tray._showNotification = () => {};
+            }
+        } else {
+            this._restoreSystemBanners();
+        }
+    }
+
+    _restoreSystemBanners() {
+        const tray = Main.messageTray;
+        if (!tray) return;
+        tray.bannerBlocked = false;
+        if (this._origShowNotif) {
+            tray._showNotification = this._origShowNotif;
+            this._origShowNotif = null;
+        }
     }
 
     _updateFullscreen() {
@@ -196,9 +232,9 @@ export default class OrbitExtension extends Extension {
         }
 
         this._restoreOsd();
+        this._restoreSystemBanners();
         this._stopPrivacyWatcher();
         this._stopBluetoothWatcher();
-        if (Main.messageTray) Main.messageTray.bannerBlocked = false;
         if (this._notch) {
             Main.layoutManager.removeChrome(this._notch);
             this._notch.destroy();
