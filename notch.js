@@ -1329,6 +1329,8 @@ class OrbitNotch extends St.Widget {
             'microphone':    'audio-input-microphone-symbolic',
             'camera':        'camera-web-symbolic',
             'timer-done':    'alarm-symbolic',
+            'bluetooth-connect':    'bluetooth-active-symbolic',
+            'bluetooth-disconnect': 'bluetooth-disabled-symbolic',
         };
 
         // Auto-pick volume sub-type from value
