@@ -558,3 +558,43 @@
     font-size: 13px;
     padding: 22px 0;
 }
+
+/* ── Dynamic Island HUD ─────────────────────────────────── */
+
+.orbit-hud {
+    padding: 0 14px;
+    spacing: 10px;
+}
+
+.orbit-hud-icon {
+    color: #ffffff;
+    min-width: 18px;
+}
+
+.orbit-hud-mid {
+    spacing: 4px;
+}
+
+.orbit-hud-label {
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.orbit-hud-track {
+    background-color: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+}
+
+.orbit-hud-fill {
+    background-color: #ffffff;
+    border-radius: 999px;
+}
+
+.orbit-hud-value {
+    color: rgba(255, 255, 255, 0.90);
+    font-size: 13px;
+    font-weight: 600;
+    font-feature-settings: "tnum";
+    min-width: 36px;
+}

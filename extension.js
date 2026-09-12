@@ -30,6 +30,71 @@ export default class OrbitExtension extends Extension {
         this._panelAllocId = Main.panel.connect('notify::height', () => this._place());
 
         this._fullscreenId = global.display.connect('in-fullscreen-changed', () => this._updateFullscreen());
+
+        this._interceptOsd();
+    }
+
+    // Suppress GNOME's built-in volume/brightness OSD and route to our notch HUD.
+    _interceptOsd() {
+        const osd = Main.osdWindowManager;
+        if (!osd) return;
+
+        // Save original show methods
+        this._origOsdShow = osd.show;
+        this._origOsdShowOne = osd.showOne ?? null;
+        this._origOsdShowAll = osd.showAll ?? null;
+
+        const self = this;
+
+        // Symbols that indicate volume/brightness actions
+        const hudIconPatterns = [
+            { re: /audio-volume|audio-speaker|microphone-sensitivity/, type: 'volume' },
+            { re: /display-brightness|screen-brightness|keyboard-brightness/, type: 'brightness' },
+        ];
+
+        const parseOsdCall = (icon, level) => {
+            const name = typeof icon?.icon_name === 'string'
+                ? icon.icon_name
+                : (icon?.get_icon_name?.() ?? '');
+            for (const { re, type } of hudIconPatterns) {
+                if (re.test(name)) return { type, value: level != null ? level / 100 : null };
+            }
+            return null;
+        };
+
+        const routeOsd = (icon, level) => {
+            const matched = parseOsdCall(icon, level);
+            if (!matched) return false;            // not ours — let system handle it
+            if (self._notch) self._notch.showHud(matched.type, matched.value);
+            return true;
+        };
+
+        // GNOME 49+ has showOne / showAll; earlier has show
+        if (osd.showOne) {
+            osd.showOne = function(monitorIndex, icon, label, level) {
+                if (routeOsd(icon, level)) return;
+                self._origOsdShowOne.call(osd, monitorIndex, icon, label, level);
+            };
+        }
+        if (osd.showAll) {
+            osd.showAll = function(icon, label, level) {
+                if (routeOsd(icon, level)) return;
+                self._origOsdShowAll.call(osd, icon, label, level);
+            };
+        }
+        // Older path always present
+        osd.show = function(monitorIndex, icon, label, level) {
+            if (routeOsd(icon, level)) return;
+            self._origOsdShow.call(osd, monitorIndex, icon, label, level);
+        };
+    }
+
+    _restoreOsd() {
+        const osd = Main.osdWindowManager;
+        if (!osd) return;
+        if (this._origOsdShow) { osd.show = this._origOsdShow; this._origOsdShow = null; }
+        if (this._origOsdShowOne) { osd.showOne = this._origOsdShowOne; this._origOsdShowOne = null; }
+        if (this._origOsdShowAll) { osd.showAll = this._origOsdShowAll; this._origOsdShowAll = null; }
     }
 
     _applyBannerBlock() {
@@ -76,6 +141,7 @@ export default class OrbitExtension extends Extension {
             this._notifToggleId = 0;
         }
 
+        this._restoreOsd();
         if (Main.messageTray) Main.messageTray.bannerBlocked = false;
         if (this._notch) {
             Main.layoutManager.removeChrome(this._notch);

@@ -25,6 +25,7 @@ import { LyricsClient } from './lyricsClient.js';
 import { OrbitLyricsWidget } from './lyricsWidget.js';
 
 const NOTIF_H = 76;
+const HUD_W = 260;
 const LYR_H = 40;
 const ART_CLOSED = 20;
 const ART_OPEN = 90;
@@ -64,6 +65,9 @@ class OrbitNotch extends St.Widget {
         this._hinting = false;
         this._view = 'media';
         this._peeking = false;
+        this._hudActive = false;
+        this._hudTimer = 0;
+        this._lastChargingState = undefined;
         this._unread = false;
         this._expandedGroups = new Set();
         this._expandedItems = new Set();
@@ -130,6 +134,7 @@ class OrbitNotch extends St.Widget {
         this._buildClosedLayer();
         this._buildOpenLayer();
         this._buildNotifLayer();
+        this._buildHudLayer();
         this._applyTheme();
         this._themeIds = ['theme', 'theme-open']
             .map(k => settings.connect(`changed::${k}`, () => this._applyTheme()));
@@ -995,6 +1000,7 @@ class OrbitNotch extends St.Widget {
         if (!present) {
             this._battLabel.text = '';
             this._battIcon.visible = false;
+            this._lastChargingState = undefined;
             return;
         }
         const pct = Math.round(dev.percentage);
@@ -1010,6 +1016,14 @@ class OrbitNotch extends St.Widget {
         else
             this._battIcon.remove_style_class_name('charging');
         this._battIcon.visible = true;
+
+        // Show charger HUD when plug/unplug state changes
+        if (this._lastChargingState !== undefined && this._lastChargingState !== charging) {
+            const type = charging ? 'charger-in' : 'charger-out';
+            const pctLabel = charging ? `Charging • ${pct}%` : `On Battery • ${pct}%`;
+            this.showHud(type, null, pctLabel);
+        }
+        this._lastChargingState = charging;
     }
 
     _buildNotifLayer() {
@@ -1035,6 +1049,134 @@ class OrbitNotch extends St.Widget {
         this._peekTime = new St.Label({ style_class: 'orbit-peek-app', y_align: Clutter.ActorAlign.CENTER });
         this._notifLayer.add_child(this._peekTime);
         this.add_child(this._notifLayer);
+    }
+
+    _buildHudLayer() {
+        // Outer box: icon on left, content on right
+        this._hudLayer = new St.BoxLayout({
+            style_class: 'orbit-hud',
+            x_expand: true, y_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
+            y_align: Clutter.ActorAlign.CENTER,
+            opacity: 0, reactive: false,
+            vertical: false,
+        });
+
+        this._hudIcon = new St.Icon({
+            style_class: 'orbit-hud-icon',
+            icon_size: 18,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._hudLayer.add_child(this._hudIcon);
+
+        // Middle: label (volume/brightness/charger name) + slider track
+        const mid = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'orbit-hud-mid',
+        });
+
+        this._hudLabel = new St.Label({
+            style_class: 'orbit-hud-label',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._hudLabel.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
+        mid.add_child(this._hudLabel);
+
+        // Slider track + fill
+        const track = new St.Widget({ style_class: 'orbit-hud-track', height: 4, x_expand: true });
+        this._hudFill = new St.Widget({ style_class: 'orbit-hud-fill', height: 4 });
+        track.add_child(this._hudFill);
+        mid.add_child(track);
+        this._hudTrack = track;
+
+        this._hudLayer.add_child(mid);
+
+        // Right: value label (e.g. "72%")
+        this._hudValue = new St.Label({
+            style_class: 'orbit-hud-value',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._hudLayer.add_child(this._hudValue);
+
+        this.add_child(this._hudLayer);
+    }
+
+    // Public: called from extension.js when OSD fires.
+    // type: 'volume' | 'brightness' | 'charger-in' | 'charger-out'
+    // value: 0-1 fraction (volume/brightness), or null (charger)
+    // label: optional override string
+    showHud(type, value, label) {
+        if (this._open) return;
+        this._clearHudTimer();
+
+        // Set icon based on type
+        const iconMap = {
+            'volume-high':   'audio-volume-high-symbolic',
+            'volume-medium': 'audio-volume-medium-symbolic',
+            'volume-low':    'audio-volume-low-symbolic',
+            'volume-muted':  'audio-volume-muted-symbolic',
+            'brightness':    'display-brightness-symbolic',
+            'charger-in':    'battery-full-charging-symbolic',
+            'charger-out':   'battery-full-symbolic',
+        };
+
+        // Auto-pick volume sub-type from value
+        let hudType = type;
+        if (type === 'volume' && value !== null) {
+            if (value <= 0) hudType = 'volume-muted';
+            else if (value < 0.35) hudType = 'volume-low';
+            else if (value < 0.70) hudType = 'volume-medium';
+            else hudType = 'volume-high';
+        }
+
+        this._hudIcon.icon_name = iconMap[hudType] || iconMap['brightness'];
+
+        const isSlider = value !== null && value !== undefined;
+        this._hudLabel.text = label || ({
+            'volume-high': 'Volume', 'volume-medium': 'Volume',
+            'volume-low': 'Volume', 'volume-muted': 'Volume',
+            'brightness': 'Brightness',
+            'charger-in': 'Charging', 'charger-out': 'On Battery',
+        }[hudType] || type);
+
+        if (isSlider) {
+            this._hudValue.text = `${Math.round(value * 100)}%`;
+            this._hudTrack.visible = true;
+            // Resize fill when track lays out
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => {
+                const tw = this._hudTrack.width;
+                if (tw > 0) this._hudFill.set_width(Math.round(tw * value));
+                return GLib.SOURCE_REMOVE;
+            });
+        } else {
+            this._hudValue.text = '';
+            this._hudTrack.visible = false;
+        }
+
+        this._hudActive = true;
+        this._expMode = 'hud';
+        this._peeking = false;
+        this._hinting = false;
+        this._animateGeom(HUD_W, this._ch, SPRINGS.peek);
+
+        this._hudTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2200, () => {
+            this._hudTimer = 0;
+            if (!this.hover) this._collapseHud();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _collapseHud() {
+        if (!this._hudActive) return;
+        this._hudActive = false;
+        this._expMode = 'home';
+        this._animateGeom(this._cw, this._ch, SPRINGS.close);
+    }
+
+    _clearHudTimer() {
+        if (this._hudTimer) { GLib.Source.remove(this._hudTimer); this._hudTimer = 0; }
     }
 
     _renderPeek(item) {
@@ -1105,13 +1247,18 @@ class OrbitNotch extends St.Widget {
         this._shape.queue_repaint();
 
         const home = this._expMode === 'home';
+        const hud = this._expMode === 'hud';
         const fadeIn = clamp01((openFrac - 0.4) / 0.6);
 
         const peekSpan = Math.max(1, this._notifW - this._cw);
         const peekFrac = clamp01((w - this._cw) / peekSpan);
         const notifFade = clamp01((peekFrac - 0.25) / 0.75);
 
-        const expFrac = home ? openFrac : peekFrac;
+        const hudSpan = Math.max(1, HUD_W - this._cw);
+        const hudFrac = clamp01((w - this._cw) / hudSpan);
+        const hudFade = clamp01((hudFrac - 0.2) / 0.8);
+
+        const expFrac = home ? openFrac : (hud ? hudFrac : peekFrac);
         this._expFrac = expFrac;
         if (this._blurFx && Blur) {
             const sf = St.ThemeContext.get_for_stage(global.stage).scale_factor;
@@ -1126,7 +1273,8 @@ class OrbitNotch extends St.Widget {
         }
         this._settleLayer(this._openLayer, home ? fadeIn : 0);
         this._openLayer.reactive = home && openFrac > 0.9;
-        if (this._notifLayer) this._settleLayer(this._notifLayer, home ? 0 : notifFade);
+        if (this._notifLayer) this._settleLayer(this._notifLayer, home ? 0 : (hud ? 0 : notifFade));
+        if (this._hudLayer) this._settleLayer(this._hudLayer, hud ? hudFade : 0);
         if (this._gradient) this._gradient.opacity = Math.round((home ? fadeIn : 0) * 255);
     }
 
@@ -1520,6 +1668,7 @@ class OrbitNotch extends St.Widget {
         this._clearCloseTimer();
         this._clearOpenTimer();
         this._clearPeekTimer();
+        this._clearHudTimer();
         for (const id of this._transientTimeouts) GLib.Source.remove(id);
         this._transientTimeouts.clear();
         this._stopDotPulse();
