@@ -128,8 +128,8 @@
     </key>
 
     <key name="notif-peek-seconds" type="i">
-      <default>2</default>
-      <range min="1" max="15"/>
+      <default>6</default>
+      <range min="1" max="30"/>
       <summary>Notification peek duration</summary>
       <description>How long the notification peek stays open, in seconds.</description>
     </key>

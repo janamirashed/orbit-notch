@@ -1692,6 +1692,33 @@ class OrbitNotch extends St.Widget {
         return Clutter.EVENT_STOP;
     }
 
+
+    // Show or hide the media player column (art + controls), letting calendar fill the gap.
+    _setPlayerVisible(visible) {
+        if (!this._openArt) return;
+        if (this._playerVisible === visible) return;
+        this._playerVisible = visible;
+
+        // Album art + right panel (title, scrubber, controls)
+        // The body BoxLayout is: [_openArt][right][_calBox]
+        // We show/hide everything except _calBox
+        for (const child of this._bodyMedia.get_children()) {
+            if (child === this._calBox) continue;   // always visible
+            child.ease({
+                opacity: visible ? 255 : 0,
+                duration: 200,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                onComplete: () => { child.visible = visible; },
+            });
+            if (visible) child.visible = true;
+        }
+
+        // Calendar: expand to fill when player hidden
+        if (this._calBox) {
+            this._calBox.x_expand = !visible;
+        }
+    }
+
     _onMediaChanged() {
         const st = this._media.getState();
         const playing = st.hasPlayer && st.status === 'Playing';
@@ -1708,9 +1735,13 @@ class OrbitNotch extends St.Widget {
             this._swapIcon(this._playBtn.child, 'media-playback-start-symbolic');
             this._updateClosedDot();
             this._clearLyrics();
+            // No player → hide player area, expand calendar full width
+            this._setPlayerVisible(false);
             return;
         }
 
+        // Player present → show player, calendar shrinks back
+        this._setPlayerVisible(true);
         this._title.text = st.title || 'Unknown';
         this._artist.text = st.artist || '';
         this._swapIcon(this._playBtn.child,
