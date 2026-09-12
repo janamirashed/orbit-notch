@@ -90,18 +90,38 @@
 }
 
 .orbit-sys {
-    spacing: 8px;
+    spacing: 12px;
+}
+
+.orbit-sys-btn {
+    color: rgba(255, 255, 255, 0.65);
+    border-radius: 6px;
+    padding: 4px;
+    transition-duration: 150ms;
+}
+
+.orbit-sys-btn:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.orbit-batt-box {
+    spacing: 5px;
 }
 
 .orbit-batt-pct {
     color: rgba(255, 255, 255, 0.85);
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 500;
     font-feature-settings: "tnum";
 }
 
 .orbit-batt-icon {
-    color: #3ad15a;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.orbit-batt-icon.charging {
+    color: #30d158;
 }
 
 .orbit-art-open {

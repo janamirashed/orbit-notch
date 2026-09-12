@@ -18,8 +18,7 @@ export default class OrbitExtension extends Extension {
             affectsStruts: false,
         });
 
-        this._dateMenu = Main.panel.statusArea.dateMenu;
-        if (this._dateMenu) this._dateMenu.container.hide();
+        this._dateMenu = null;
 
         this._applyBannerBlock();
         this._notifToggleId = this._settings.connect('changed::enable-notifications',

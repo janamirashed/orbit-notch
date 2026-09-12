@@ -368,7 +368,7 @@ class OrbitNotch extends St.Widget {
 
         this._closedLayer.add_child(new St.Widget({ x_expand: true }));
         this._closedTime = new St.Label({
-            style_class: 'orbit-closed-time', y_align: Clutter.ActorAlign.CENTER });
+            style_class: 'orbit-closed-time', y_align: Clutter.ActorAlign.CENTER, visible: false });
         this._closedLayer.add_child(this._closedTime);
         this._closedLayer.add_child(new St.Widget({ x_expand: true }));
         this._updateDateTime();
@@ -843,9 +843,17 @@ class OrbitNotch extends St.Widget {
     }
 
     _buildHeader() {
-        const header = new St.BoxLayout({ style_class: 'orbit-header' });
+        const header = new St.BoxLayout({
+            style_class: 'orbit-header',
+            y_align: Clutter.ActorAlign.CENTER,
+            vertical: false,
+        });
 
-        const tabs = new St.BoxLayout({ style_class: 'orbit-tabs' });
+        const tabs = new St.BoxLayout({
+            style_class: 'orbit-tabs',
+            y_align: Clutter.ActorAlign.CENTER,
+            vertical: false,
+        });
         this._homeTab = this._tabButton('go-home-symbolic');
         this._homeTab.add_style_class_name('active');
         this._homeTab.connect('clicked', () => this.showView('media'));
@@ -870,14 +878,44 @@ class OrbitNotch extends St.Widget {
         header.add_child(this._headerDate);
         header.add_child(new St.Widget({ x_expand: true }));
 
-        const sys = new St.BoxLayout({ style_class: 'orbit-sys' });
-        const gear = this._tabButton('emblem-system-symbolic');
+        const sys = new St.BoxLayout({
+            style_class: 'orbit-sys',
+            y_align: Clutter.ActorAlign.CENTER,
+            vertical: false,
+        });
+        const gear = new St.Button({
+            style_class: 'orbit-sys-btn',
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        gear.set_child(new St.Icon({
+            icon_name: 'emblem-system-symbolic',
+            icon_size: 16,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._addPress(gear);
         gear.connect('clicked', () => this._openPrefs());
         sys.add_child(gear);
-        this._battLabel = new St.Label({ style_class: 'orbit-batt-pct', text: '' });
-        this._battIcon = new St.Icon({ style_class: 'orbit-batt-icon', icon_size: 16 });
-        sys.add_child(this._battLabel);
-        sys.add_child(this._battIcon);
+
+        const battBox = new St.BoxLayout({
+            style_class: 'orbit-batt-box',
+            y_align: Clutter.ActorAlign.CENTER,
+            vertical: false,
+        });
+        this._battLabel = new St.Label({
+            style_class: 'orbit-batt-pct',
+            text: '',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._battIcon = new St.Icon({
+            style_class: 'orbit-batt-icon',
+            icon_size: 16,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        battBox.add_child(this._battLabel);
+        battBox.add_child(this._battIcon);
+        sys.add_child(battBox);
+
         header.add_child(sys);
 
         return header;
@@ -966,9 +1004,14 @@ class OrbitNotch extends St.Widget {
         const charging = dev.state === UPowerGlib.DeviceState.CHARGING ||
                          dev.state === UPowerGlib.DeviceState.FULLY_CHARGED;
         this._battLabel.text = `${pct}%`;
+        const level = Math.max(0, Math.min(100, Math.round(pct / 10) * 10));
         this._battIcon.icon_name = charging
-            ? 'battery-full-charging-symbolic'
-            : `battery-level-${Math.max(0, Math.min(100, Math.round(pct / 10) * 10))}-symbolic`;
+            ? `battery-level-${level}-charging-symbolic`
+            : `battery-level-${level}-symbolic`;
+        if (charging)
+            this._battIcon.add_style_class_name('charging');
+        else
+            this._battIcon.remove_style_class_name('charging');
         this._battIcon.visible = true;
     }
 
