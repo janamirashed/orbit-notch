@@ -28,11 +28,20 @@ export default class OrbitExtension extends Extension {
         this._monitorsId = Main.layoutManager.connect('monitors-changed', () => this._place());
 
         this._panelAllocId = Main.panel.connect('notify::height', () => this._place());
+
+        this._fullscreenId = global.display.connect('in-fullscreen-changed', () => this._updateFullscreen());
     }
 
     _applyBannerBlock() {
         if (Main.messageTray)
             Main.messageTray.bannerBlocked = this._settings.get_boolean('enable-notifications');
+    }
+
+    _updateFullscreen() {
+        if (!this._notch) return;
+        const monitor = Main.layoutManager.primaryMonitor;
+        const inFs = monitor ? monitor.inFullscreen : false;
+        this._notch.visible = !inFs;
     }
 
     _place() {
@@ -42,9 +51,14 @@ export default class OrbitExtension extends Extension {
         this._notch.setMonitor(monitor);
         const panelH = Main.panel.height || Main.layoutManager.panelBox.height;
         if (panelH > 0) this._notch.setPanelHeight(panelH);
+        this._updateFullscreen();
     }
 
     disable() {
+        if (this._fullscreenId) {
+            global.display.disconnect(this._fullscreenId);
+            this._fullscreenId = 0;
+        }
         if (this._monitorsId) {
             Main.layoutManager.disconnect(this._monitorsId);
             this._monitorsId = 0;

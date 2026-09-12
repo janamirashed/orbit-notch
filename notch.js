@@ -173,7 +173,7 @@ class OrbitNotch extends St.Widget {
         this._lyrW = this._settings.get_int('lyrics-width');
         const active = this._lyricsActive();
         this._cw = active ? this._lyrW : this._baseCw;
-        this._ch = active ? LYR_H : this._baseCh;
+        this._ch = this._baseCh;
         if (this._open) this._animateGeom(this._openW, this._openH, SPRINGS.open);
         else if (this._peeking) this._animateGeom(this._notifW, Math.max(this._ch, NOTIF_H), SPRINGS.peek);
         else this._animateGeom(this._cw, this._ch, SPRINGS.close);
@@ -182,7 +182,7 @@ class OrbitNotch extends St.Widget {
     _refreshClosedSize() {
         const active = this._lyricsActive();
         const w = active ? this._lyrW : this._baseCw;
-        const h = active ? LYR_H : this._baseCh;
+        const h = this._baseCh;
         if (w === this._cw && h === this._ch) return;
         this._cw = w;
         this._ch = h;
@@ -388,7 +388,7 @@ class OrbitNotch extends St.Widget {
         });
 
         this._lyricsArt = new St.Bin({
-            style_class: 'orbit-lyr-art', width: 28, height: 28, visible: false,
+            style_class: 'orbit-lyr-art', width: 22, height: 22, visible: false,
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._lyricsLayer.add_child(this._lyricsArt);
