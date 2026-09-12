@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="org.gnome.shell.extensions.orbit"
-          path="/org/gnome/shell/extensions/orbit/">
+  <schema id="org.gnome.shell.extensions.orbit-dynamic-island"
+          path="/org/gnome/shell/extensions/orbit-dynamic-island/">
 
     <key name="theme" type="s">
       <default>'notch'</default>
