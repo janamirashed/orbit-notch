@@ -617,3 +617,100 @@
 .orbit-priv-cam {
     background-color: #30d158;   /* iOS green */
 }
+
+/* ── Timer / Stopwatch ──────────────────────────────────── */
+
+.orbit-timer-body {
+    padding: 4px 14px 10px;
+    spacing: 10px;
+}
+
+.orbit-timer-display {
+    font-size: 42px;
+    font-weight: 700;
+    color: #ffffff;
+    font-feature-settings: "tnum";
+    text-align: center;
+}
+
+.orbit-timer-modes {
+    spacing: 6px;
+}
+
+.orbit-timer-mode-btn {
+    border-radius: 999px;
+    padding: 4px 14px;
+    color: rgba(255, 255, 255, 0.5);
+    background-color: rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+    font-weight: 500;
+    transition-duration: 150ms;
+}
+
+.orbit-timer-mode-btn.active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.orbit-timer-adj {
+    spacing: 6px;
+}
+
+.orbit-timer-adj-btn {
+    border-radius: 999px;
+    padding: 3px;
+    color: rgba(255, 255, 255, 0.6);
+    background-color: rgba(255, 255, 255, 0.10);
+}
+
+.orbit-timer-adj-btn:hover {
+    background-color: rgba(255, 255, 255, 0.20);
+    color: #ffffff;
+}
+
+.orbit-timer-adj-val {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+    font-feature-settings: "tnum";
+    min-width: 36px;
+    text-align: center;
+}
+
+.orbit-timer-ctrl {
+    spacing: 10px;
+}
+
+.orbit-timer-start-btn {
+    border-radius: 999px;
+    padding: 6px 22px;
+    background-color: #30d158;
+    color: #000000;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.orbit-timer-start-btn:hover {
+    background-color: #40e168;
+}
+
+.orbit-timer-reset-btn {
+    border-radius: 999px;
+    padding: 6px 18px;
+    background-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.orbit-timer-reset-btn:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Live timer label on the closed pill */
+.orbit-timer-pill {
+    font-size: 11px;
+    font-weight: 600;
+    color: #30d158;
+    font-feature-settings: "tnum";
+    padding-left: 4px;
+}

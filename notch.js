@@ -378,6 +378,15 @@ class OrbitNotch extends St.Widget {
         this._vis = new OrbitVisualizer(this._settings);
         this._closedLayer.add_child(this._vis);
 
+        // Live timer / stopwatch label — shown on pill while timer runs
+        this._timerPillLabel = new St.Label({
+            style_class: 'orbit-timer-pill',
+            text: '0:00',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        this._closedLayer.add_child(this._timerPillLabel);
+
         // Privacy indicator dots — right side of the pill (like iOS orange/green dots)
         this._privDotBox = new St.BoxLayout({
             style_class: 'orbit-priv-dots',
@@ -536,6 +545,7 @@ class OrbitNotch extends St.Widget {
         this._openLayer.add_child(this._bodyNotif);
 
         this._buildShelfBody();
+        this._buildTimerBody();
 
         this.add_child(this._openLayer);
     }
@@ -570,6 +580,181 @@ class OrbitNotch extends St.Widget {
 
         this._bodyShelf.connect('key-press-event', (_a, ev) => this._onShelfKey(ev));
         this._openLayer.add_child(this._bodyShelf);
+    }
+
+    _buildTimerBody() {
+        this._bodyTimer = new St.BoxLayout({
+            style_class: 'orbit-timer-body',
+            vertical: true,
+            x_expand: true, y_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+
+        // Big display (shows running time)
+        this._timerDisplay = new St.Label({
+            style_class: 'orbit-timer-display',
+            text: '0:00',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        this._bodyTimer.add_child(this._timerDisplay);
+
+        // Mode row: Stopwatch / Timer
+        const modeRow = new St.BoxLayout({
+            style_class: 'orbit-timer-modes',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        this._swBtn = new St.Button({ style_class: 'orbit-timer-mode-btn active', label: 'Stopwatch' });
+        this._tmBtn = new St.Button({ style_class: 'orbit-timer-mode-btn', label: 'Timer' });
+        this._addPress(this._swBtn);
+        this._addPress(this._tmBtn);
+        this._swBtn.connect('clicked', () => this._setTimerMode('stopwatch'));
+        this._tmBtn.connect('clicked', () => this._setTimerMode('countdown'));
+        modeRow.add_child(this._swBtn);
+        modeRow.add_child(this._tmBtn);
+        this._bodyTimer.add_child(modeRow);
+
+        // Duration adjuster (only for countdown mode)
+        this._timerAdjRow = new St.BoxLayout({
+            style_class: 'orbit-timer-adj',
+            x_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        const minDown = this._timerAdjBtn('list-remove-symbolic', () => this._nudgeTimer(-60));
+        this._timerMinsLabel = new St.Label({ style_class: 'orbit-timer-adj-val', text: '5 min' });
+        const minUp   = this._timerAdjBtn('list-add-symbolic',    () => this._nudgeTimer(+60));
+        const secDown = this._timerAdjBtn('list-remove-symbolic', () => this._nudgeTimer(-5));
+        this._timerSecsLabel = new St.Label({ style_class: 'orbit-timer-adj-val', text: '0 sec' });
+        const secUp   = this._timerAdjBtn('list-add-symbolic',    () => this._nudgeTimer(+5));
+        this._timerAdjRow.add_child(minDown);
+        this._timerAdjRow.add_child(this._timerMinsLabel);
+        this._timerAdjRow.add_child(minUp);
+        this._timerAdjRow.add_child(new St.Widget({ width: 12 }));
+        this._timerAdjRow.add_child(secDown);
+        this._timerAdjRow.add_child(this._timerSecsLabel);
+        this._timerAdjRow.add_child(secUp);
+        this._bodyTimer.add_child(this._timerAdjRow);
+
+        // Control buttons
+        const ctrlRow = new St.BoxLayout({
+            style_class: 'orbit-timer-ctrl',
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        this._timerStartBtn = new St.Button({ style_class: 'orbit-timer-start-btn', label: 'Start' });
+        this._timerResetBtn = new St.Button({ style_class: 'orbit-timer-reset-btn', label: 'Reset' });
+        this._addPress(this._timerStartBtn);
+        this._addPress(this._timerResetBtn);
+        this._timerStartBtn.connect('clicked', () => this._onTimerStartStop());
+        this._timerResetBtn.connect('clicked', () => this._onTimerReset());
+        ctrlRow.add_child(this._timerStartBtn);
+        ctrlRow.add_child(this._timerResetBtn);
+        this._bodyTimer.add_child(ctrlRow);
+
+        // Internal state
+        this._timerMode    = 'stopwatch';   // 'stopwatch' | 'countdown'
+        this._timerRunning = false;
+        this._timerElapsed = 0;             // ms (stopwatch) or ms remaining (countdown)
+        this._timerTarget  = 5 * 60 * 1000; // default 5 min for countdown
+        this._timerTickId  = 0;
+        this._timerLastTs  = 0;
+
+        this._openLayer.add_child(this._bodyTimer);
+    }
+
+    _timerAdjBtn(icon, cb) {
+        const b = new St.Button({ style_class: 'orbit-timer-adj-btn' });
+        b.set_child(new St.Icon({ icon_name: icon, icon_size: 14 }));
+        this._addPress(b);
+        b.connect('clicked', cb);
+        return b;
+    }
+
+    _setTimerMode(mode) {
+        if (this._timerRunning) this._onTimerReset();
+        this._timerMode = mode;
+        const sw = mode === 'stopwatch';
+        this._swBtn.style_class = `orbit-timer-mode-btn${sw ? ' active' : ''}`;
+        this._tmBtn.style_class = `orbit-timer-mode-btn${sw ? '' : ' active'}`;
+        this._timerAdjRow.visible = !sw;
+        this._timerDisplay.text = sw ? '0:00' : this._formatTimer(this._timerTarget);
+        this._timerElapsed = 0;
+    }
+
+    _nudgeTimer(deltaSec) {
+        if (this._timerRunning) return;
+        this._timerTarget = Math.max(5000, this._timerTarget + deltaSec * 1000);
+        const total = Math.round(this._timerTarget / 1000);
+        const m = Math.floor(total / 60), s = total % 60;
+        this._timerMinsLabel.text = `${m} min`;
+        this._timerSecsLabel.text = `${s} sec`;
+        this._timerDisplay.text   = this._formatTimer(this._timerTarget);
+    }
+
+    _onTimerStartStop() {
+        if (!this._timerRunning) {
+            // Start
+            this._timerRunning = true;
+            this._timerLastTs  = GLib.get_monotonic_time();
+            this._timerStartBtn.label = 'Pause';
+            this._timerTickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
+                this._tickTimer();
+                return this._timerRunning ? GLib.SOURCE_CONTINUE : GLib.SOURCE_REMOVE;
+            });
+            // Show live label on closed pill
+            this._timerPillLabel.visible = true;
+        } else {
+            // Pause
+            this._timerRunning = false;
+            if (this._timerTickId) { GLib.Source.remove(this._timerTickId); this._timerTickId = 0; }
+            this._timerStartBtn.label = 'Resume';
+        }
+    }
+
+    _onTimerReset() {
+        this._timerRunning = false;
+        if (this._timerTickId) { GLib.Source.remove(this._timerTickId); this._timerTickId = 0; }
+        this._timerElapsed = 0;
+        this._timerStartBtn.label = 'Start';
+        const dispMs = this._timerMode === 'stopwatch' ? 0 : this._timerTarget;
+        this._timerDisplay.text = this._formatTimer(dispMs);
+        if (this._timerPillLabel) this._timerPillLabel.visible = false;
+    }
+
+    _tickTimer() {
+        const now = GLib.get_monotonic_time();
+        const delta = Math.round((now - this._timerLastTs) / 1000); // ms
+        this._timerLastTs = now;
+
+        if (this._timerMode === 'stopwatch') {
+            this._timerElapsed += delta;
+            const t = this._formatTimer(this._timerElapsed);
+            if (this._timerDisplay) this._timerDisplay.text = t;
+            if (this._timerPillLabel) this._timerPillLabel.text = t;
+        } else {
+            this._timerElapsed += delta;
+            const remaining = Math.max(0, this._timerTarget - this._timerElapsed);
+            const t = this._formatTimer(remaining);
+            if (this._timerDisplay) this._timerDisplay.text = t;
+            if (this._timerPillLabel) this._timerPillLabel.text = t;
+            if (remaining === 0) {
+                this._timerRunning = false;
+                this._timerStartBtn.label = 'Start';
+                this._timerElapsed = 0;
+                if (this._timerPillLabel) this._timerPillLabel.visible = false;
+                // Brief HUD
+                this.showHud('timer-done', null, 'Timer Done');
+                return;
+            }
+        }
+    }
+
+    _formatTimer(ms) {
+        const total = Math.round(ms / 1000);
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const ss = String(s).padStart(2, '0');
+        return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${ss}` : `${m}:${ss}`;
     }
 
     _renderShelf() {
@@ -750,10 +935,13 @@ class OrbitNotch extends St.Widget {
         this._bodyMedia.visible = view === 'media';
         this._bodyNotif.visible = view === 'notifs';
         this._bodyShelf.visible = view === 'shelf';
-        for (const t of [this._homeTab, this._shelfTab, this._bellTab])
+        if (this._bodyTimer) this._bodyTimer.visible = view === 'timer';
+        for (const t of [this._homeTab, this._shelfTab, this._bellTab, this._timerTab])
             t.remove_style_class_name('active');
-        const tab = view === 'media' ? this._homeTab
-            : view === 'shelf' ? this._shelfTab : this._bellTab;
+        const tab = view === 'media'  ? this._homeTab
+            : view === 'shelf'  ? this._shelfTab
+            : view === 'timer'  ? this._timerTab
+            : this._bellTab;
         tab.add_style_class_name('active');
         if (view === 'notifs') { this._unread = false; this._updateClosedDot(); this._renderNotifList(); }
         if (view === 'shelf') {
@@ -879,9 +1067,12 @@ class OrbitNotch extends St.Widget {
         this._shelfTab.visible = this._settings.get_boolean('enable-shelf');
         this._bellTab = this._tabButton('preferences-system-notifications-symbolic');
         this._bellTab.connect('clicked', () => this.showView('notifs'));
+        this._timerTab = this._tabButton('timer-symbolic');
+        this._timerTab.connect('clicked', () => this.showView('timer'));
         tabs.add_child(this._homeTab);
         tabs.add_child(this._shelfTab);
         tabs.add_child(this._bellTab);
+        tabs.add_child(this._timerTab);
         header.add_child(tabs);
 
         this._shelfSettingId = this._settings.connect('changed::enable-shelf', () => {
@@ -1137,6 +1328,7 @@ class OrbitNotch extends St.Widget {
             'charger-out':   'battery-full-symbolic',
             'microphone':    'audio-input-microphone-symbolic',
             'camera':        'camera-web-symbolic',
+            'timer-done':    'alarm-symbolic',
         };
 
         // Auto-pick volume sub-type from value
@@ -1157,6 +1349,7 @@ class OrbitNotch extends St.Widget {
             'brightness': 'Brightness',
             'charger-in': 'Charging', 'charger-out': 'On Battery',
             'microphone': 'Microphone', 'camera': 'Camera',
+            'timer-done': 'Timer Done ✓',
         }[hudType] || type);
 
         if (isSlider) {
@@ -1375,9 +1568,11 @@ class OrbitNotch extends St.Widget {
                 this._bodyMedia.visible = true;
                 this._bodyNotif.visible = false;
                 this._bodyShelf.visible = false;
+                if (this._bodyTimer) this._bodyTimer.visible = false;
                 this._homeTab.add_style_class_name('active');
                 this._shelfTab.remove_style_class_name('active');
                 this._bellTab.remove_style_class_name('active');
+                if (this._timerTab) this._timerTab.remove_style_class_name('active');
             }
         });
     }
