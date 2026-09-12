@@ -1258,7 +1258,6 @@ class OrbitNotch extends St.Widget {
     }
 
     _buildHudLayer() {
-        // Outer box: icon on left, content on right
         this._hudLayer = new St.BoxLayout({
             style_class: 'orbit-hud',
             x_expand: true, y_expand: true,
@@ -1268,110 +1267,129 @@ class OrbitNotch extends St.Widget {
             vertical: false,
         });
 
+        // Left: icon
         this._hudIcon = new St.Icon({
             style_class: 'orbit-hud-icon',
-            icon_size: 18,
+            icon_size: 22,
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._hudLayer.add_child(this._hudIcon);
 
-        // Middle: label (volume/brightness/charger name) + slider track
-        const mid = new St.BoxLayout({
-            vertical: true,
-            x_expand: true,
+        // Centre: either a slider track (numeric) or a text label (non-numeric)
+        this._hudSliderBox = new St.BoxLayout({
+            vertical: true, x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'orbit-hud-mid',
         });
+        this._hudTrack = new St.Widget({
+            style_class: 'orbit-hud-track',
+            height: 7, x_expand: true,
+        });
+        this._hudFill = new St.Widget({ style_class: 'orbit-hud-fill', height: 7 });
+        this._hudTrack.add_child(this._hudFill);
+        // Recompute fill whenever the track gets a real allocation
+        this._hudTrack.connect('notify::width', () => this._updateHudFill());
+        this._hudSliderBox.add_child(this._hudTrack);
 
+        // Text label used for non-slider types (charger, mic, bt…)
         this._hudLabel = new St.Label({
             style_class: 'orbit-hud-label',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._hudLabel.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
-        mid.add_child(this._hudLabel);
 
-        // Slider track + fill
-        const track = new St.Widget({ style_class: 'orbit-hud-track', height: 4, x_expand: true });
-        this._hudFill = new St.Widget({ style_class: 'orbit-hud-fill', height: 4 });
-        track.add_child(this._hudFill);
-        mid.add_child(track);
-        this._hudTrack = track;
+        this._hudLayer.add_child(this._hudSliderBox);
+        this._hudLayer.add_child(this._hudLabel);
 
-        this._hudLayer.add_child(mid);
-
-        // Right: value label (e.g. "72%")
+        // Right: percentage value (slider only)
         this._hudValue = new St.Label({
             style_class: 'orbit-hud-value',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._hudLayer.add_child(this._hudValue);
 
+        // Internal fill fraction (0-1)
+        this._hudFillFrac = 0;
+
         this.add_child(this._hudLayer);
     }
 
+    _updateHudFill() {
+        if (!this._hudTrack || !this._hudFill) return;
+        const tw = this._hudTrack.get_width();
+        if (tw > 0) this._hudFill.width = Math.round(tw * this._hudFillFrac);
+    }
+
     // Public: called from extension.js when OSD fires.
-    // type: 'volume' | 'brightness' | 'charger-in' | 'charger-out'
-    // value: 0-1 fraction (volume/brightness), or null (charger)
-    // label: optional override string
+    // type    : 'volume' | 'brightness' | 'charger-in' | ...
+    // value   : 0-1 fraction (volume/brightness), or null (text-only)
+    // label   : optional override string (for text-only types)
     showHud(type, value, label) {
         if (this._open) return;
         this._clearHudTimer();
 
-        // Set icon based on type
         const iconMap = {
-            'volume-high':   'audio-volume-high-symbolic',
-            'volume-medium': 'audio-volume-medium-symbolic',
-            'volume-low':    'audio-volume-low-symbolic',
-            'volume-muted':  'audio-volume-muted-symbolic',
-            'brightness':    'display-brightness-symbolic',
-            'charger-in':    'battery-full-charging-symbolic',
-            'charger-out':   'battery-full-symbolic',
-            'microphone':    'audio-input-microphone-symbolic',
-            'camera':        'camera-web-symbolic',
-            'timer-done':    'alarm-symbolic',
+            'volume-high':          'audio-volume-high-symbolic',
+            'volume-medium':        'audio-volume-medium-symbolic',
+            'volume-low':           'audio-volume-low-symbolic',
+            'volume-muted':         'audio-volume-muted-symbolic',
+            'brightness':           'display-brightness-symbolic',
+            'charger-in':           'battery-full-charging-symbolic',
+            'charger-out':          'battery-full-symbolic',
+            'microphone':           'audio-input-microphone-symbolic',
+            'camera':               'camera-web-symbolic',
+            'timer-done':           'alarm-symbolic',
             'bluetooth-connect':    'bluetooth-active-symbolic',
             'bluetooth-disconnect': 'bluetooth-disabled-symbolic',
         };
 
-        // Auto-pick volume sub-type from value
+        // Resolve volume sub-type from level
         let hudType = type;
-        if (type === 'volume' && value !== null) {
-            if (value <= 0) hudType = 'volume-muted';
+        if (type === 'volume' && value !== null && value !== undefined) {
+            if (value <= 0)       hudType = 'volume-muted';
             else if (value < 0.35) hudType = 'volume-low';
             else if (value < 0.70) hudType = 'volume-medium';
-            else hudType = 'volume-high';
+            else                   hudType = 'volume-high';
         }
 
-        this._hudIcon.icon_name = iconMap[hudType] || iconMap['brightness'];
+        this._hudIcon.icon_name = iconMap[hudType] ?? 'audio-volume-medium-symbolic';
 
         const isSlider = value !== null && value !== undefined;
-        this._hudLabel.text = label || ({
-            'volume-high': 'Volume', 'volume-medium': 'Volume',
-            'volume-low': 'Volume', 'volume-muted': 'Volume (Muted)',
-            'brightness': 'Brightness',
-            'charger-in': 'Charging', 'charger-out': 'On Battery',
-            'microphone': 'Microphone', 'camera': 'Camera',
-            'timer-done': 'Timer Done ✓',
-        }[hudType] || type);
 
         if (isSlider) {
-            this._hudValue.text = `${Math.round(value * 100)}%`;
-            this._hudTrack.visible = true;
-            // Resize fill when track lays out
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 30, () => {
-                const tw = this._hudTrack.width;
-                if (tw > 0) this._hudFill.set_width(Math.round(tw * value));
+            // Clamp to [0,1]
+            const frac = Math.max(0, Math.min(1, value));
+            this._hudFillFrac = frac;
+            this._hudValue.text = `${Math.round(frac * 100)}%`;
+
+            this._hudSliderBox.visible = true;
+            this._hudLabel.visible     = false;
+            this._hudValue.visible     = true;
+
+            // Update fill now (may already be laid out from previous HUD call)
+            this._updateHudFill();
+            // Also deferred in case this is the first show and layout hasn't run
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 40, () => {
+                this._updateHudFill();
                 return GLib.SOURCE_REMOVE;
             });
         } else {
-            this._hudValue.text = '';
-            this._hudTrack.visible = false;
+            // Text-only: charger / mic / bt / etc.
+            const fallbackLabels = {
+                'charger-in': 'Charging', 'charger-out': 'On Battery',
+                'microphone': 'Microphone', 'camera': 'Camera',
+                'timer-done': 'Timer Done ✓',
+                'bluetooth-connect': 'Connected', 'bluetooth-disconnect': 'Disconnected',
+            };
+            this._hudLabel.text    = label ?? (fallbackLabels[hudType] ?? type);
+            this._hudSliderBox.visible = false;
+            this._hudLabel.visible     = true;
+            this._hudValue.visible     = false;
         }
 
         this._hudActive = true;
-        this._expMode = 'hud';
-        this._peeking = false;
-        this._hinting = false;
+        this._expMode   = 'hud';
+        this._peeking   = false;
+        this._hinting   = false;
         this._animateGeom(HUD_W, this._ch, SPRINGS.peek);
 
         this._hudTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2200, () => {

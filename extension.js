@@ -34,8 +34,46 @@ export default class OrbitExtension extends Extension {
         this._fullscreenId = global.display.connect('in-fullscreen-changed', () => this._updateFullscreen());
 
         this._interceptOsd();
+        this._startBrightnessWatcher();
         this._startPrivacyWatcher();
         this._startBluetoothWatcher();
+    }
+
+    // Fallback brightness watcher — subscribes to GSD Power.Screen D-Bus property.
+    // On Wayland, brightness keys sometimes bypass Main.osdWindowManager entirely.
+    _startBrightnessWatcher() {
+        try {
+            this._brightLastLevel = -1;
+            this._brightSubId = Gio.DBus.session.signal_subscribe(
+                null,
+                'org.freedesktop.DBus.Properties',
+                'PropertiesChanged',
+                null,
+                null,
+                Gio.DBusSignalFlags.NONE,
+                (_conn, _sender, _path, _iface, _sig, params) => {
+                    try {
+                        const [ifaceName, changedProps] = params.deep_unpack();
+                        if (ifaceName !== 'org.gnome.SettingsDaemon.Power.Screen') return;
+                        const bv = changedProps['Brightness'];
+                        if (bv == null) return;
+                        const pct = bv.deep_unpack();   // integer 0-100
+                        if (pct === this._brightLastLevel) return;
+                        this._brightLastLevel = pct;
+                        if (this._notch) this._notch.showHud('brightness', pct / 100, null);
+                    } catch (_) {}
+                }
+            );
+        } catch (e) {
+            logError(e, 'OrbitDynamicIsland: brightness watcher failed to start');
+        }
+    }
+
+    _stopBrightnessWatcher() {
+        if (this._brightSubId) {
+            Gio.DBus.session.signal_unsubscribe(this._brightSubId);
+            this._brightSubId = 0;
+        }
     }
 
     _startPrivacyWatcher() {
@@ -121,35 +159,44 @@ export default class OrbitExtension extends Extension {
                     name = icon.to_string() ?? '';
             }
             for (const { re, type } of hudIconPatterns) {
-                if (re.test(name)) return { type, value: level != null ? level / 100 : null };
+                if (re.test(name)) {
+                    // Compute 0-1 fraction.  GNOME may pass (level=0.65, maxLevel=1)
+                    // or (level=65, maxLevel=100) — divide by maxLevel when present.
+                    let frac = null;
+                    if (level != null) {
+                        const max = (maxLevel != null && maxLevel > 0) ? maxLevel : 100;
+                        frac = Math.max(0, Math.min(1, level / max));
+                    }
+                    return { type, value: frac };
+                }
             }
             return null;
         };
 
-        const routeOsd = (icon, level) => {
-            const matched = parseOsdCall(icon, level);
-            if (!matched) return false;            // not ours — let system handle it
+        const routeOsd = (icon, level, maxLevel) => {
+            const matched = parseOsdCall(icon, level, maxLevel);
+            if (!matched) return false;
             if (self._notch) self._notch.showHud(matched.type, matched.value);
             return true;
         };
 
         // GNOME 49+ has showOne / showAll; earlier has show
         if (osd.showOne) {
-            osd.showOne = function(monitorIndex, icon, label, level) {
-                if (routeOsd(icon, level)) return;
-                self._origOsdShowOne.call(osd, monitorIndex, icon, label, level);
+            osd.showOne = function(monitorIndex, icon, label, level, maxLevel) {
+                if (routeOsd(icon, level, maxLevel)) return;
+                self._origOsdShowOne.call(osd, monitorIndex, icon, label, level, maxLevel);
             };
         }
         if (osd.showAll) {
-            osd.showAll = function(icon, label, level) {
-                if (routeOsd(icon, level)) return;
-                self._origOsdShowAll.call(osd, icon, label, level);
+            osd.showAll = function(icon, label, level, maxLevel) {
+                if (routeOsd(icon, level, maxLevel)) return;
+                self._origOsdShowAll.call(osd, icon, label, level, maxLevel);
             };
         }
-        // Older path always present
-        osd.show = function(monitorIndex, icon, label, level) {
-            if (routeOsd(icon, level)) return;
-            self._origOsdShow.call(osd, monitorIndex, icon, label, level);
+        // Always-present fallback
+        osd.show = function(monitorIndex, icon, label, level, maxLevel) {
+            if (routeOsd(icon, level, maxLevel)) return;
+            self._origOsdShow.call(osd, monitorIndex, icon, label, level, maxLevel);
         };
     }
 
@@ -233,6 +280,7 @@ export default class OrbitExtension extends Extension {
 
         this._restoreOsd();
         this._restoreSystemBanners();
+        this._stopBrightnessWatcher();
         this._stopPrivacyWatcher();
         this._stopBluetoothWatcher();
         if (this._notch) {
