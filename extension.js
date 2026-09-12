@@ -4,6 +4,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import { OrbitMediaController } from './mediaController.js';
 import { OrbitNotch } from './notch.js';
 import { SharedVisualizerEngine } from './visualizer.js';
+import { PrivacyWatcher } from './privacyWatcher.js';
 
 export default class OrbitExtension extends Extension {
     enable() {
@@ -32,6 +33,26 @@ export default class OrbitExtension extends Extension {
         this._fullscreenId = global.display.connect('in-fullscreen-changed', () => this._updateFullscreen());
 
         this._interceptOsd();
+        this._startPrivacyWatcher();
+    }
+
+    _startPrivacyWatcher() {
+        try {
+            this._privacy = new PrivacyWatcher();
+            this._privacyId = this._privacy.connect('changed', (_w, mic, cam) => {
+                if (this._notch) this._notch.setPrivacyState(mic, cam);
+            });
+        } catch (e) {
+            logError(e, 'OrbitDynamicIsland: privacy watcher failed to start');
+        }
+    }
+
+    _stopPrivacyWatcher() {
+        if (this._privacy) {
+            if (this._privacyId) { this._privacy.disconnect(this._privacyId); this._privacyId = 0; }
+            this._privacy.destroy();
+            this._privacy = null;
+        }
     }
 
     // Suppress GNOME's built-in volume/brightness OSD and route to our notch HUD.
@@ -142,6 +163,7 @@ export default class OrbitExtension extends Extension {
         }
 
         this._restoreOsd();
+        this._stopPrivacyWatcher();
         if (Main.messageTray) Main.messageTray.bannerBlocked = false;
         if (this._notch) {
             Main.layoutManager.removeChrome(this._notch);

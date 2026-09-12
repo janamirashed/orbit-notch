@@ -598,3 +598,22 @@
     font-feature-settings: "tnum";
     min-width: 36px;
 }
+
+/* ── Privacy indicator dots (mic = orange, cam = green) ─── */
+
+.orbit-priv-dots {
+    spacing: 4px;
+    padding-right: 2px;
+}
+
+.orbit-priv-dot {
+    border-radius: 999px;
+}
+
+.orbit-priv-mic {
+    background-color: #ff9f0a;   /* iOS orange */
+}
+
+.orbit-priv-cam {
+    background-color: #30d158;   /* iOS green */
+}

@@ -377,6 +377,21 @@ class OrbitNotch extends St.Widget {
 
         this._vis = new OrbitVisualizer(this._settings);
         this._closedLayer.add_child(this._vis);
+
+        // Privacy indicator dots — right side of the pill (like iOS orange/green dots)
+        this._privDotBox = new St.BoxLayout({
+            style_class: 'orbit-priv-dots',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        this._privMicDot = new St.Widget({ style_class: 'orbit-priv-dot orbit-priv-mic', width: 8, height: 8 });
+        this._privCamDot = new St.Widget({ style_class: 'orbit-priv-dot orbit-priv-cam', width: 8, height: 8 });
+        this._privMicDot.visible = false;
+        this._privCamDot.visible = false;
+        this._privDotBox.add_child(this._privMicDot);
+        this._privDotBox.add_child(this._privCamDot);
+        this._closedLayer.add_child(this._privDotBox);
+
         this.add_child(this._closedLayer);
 
         this._buildLyricsLayer();
@@ -1120,6 +1135,8 @@ class OrbitNotch extends St.Widget {
             'brightness':    'display-brightness-symbolic',
             'charger-in':    'battery-full-charging-symbolic',
             'charger-out':   'battery-full-symbolic',
+            'microphone':    'audio-input-microphone-symbolic',
+            'camera':        'camera-web-symbolic',
         };
 
         // Auto-pick volume sub-type from value
@@ -1136,9 +1153,10 @@ class OrbitNotch extends St.Widget {
         const isSlider = value !== null && value !== undefined;
         this._hudLabel.text = label || ({
             'volume-high': 'Volume', 'volume-medium': 'Volume',
-            'volume-low': 'Volume', 'volume-muted': 'Volume',
+            'volume-low': 'Volume', 'volume-muted': 'Volume (Muted)',
             'brightness': 'Brightness',
             'charger-in': 'Charging', 'charger-out': 'On Battery',
+            'microphone': 'Microphone', 'camera': 'Camera',
         }[hudType] || type);
 
         if (isSlider) {
@@ -1177,6 +1195,25 @@ class OrbitNotch extends St.Widget {
 
     _clearHudTimer() {
         if (this._hudTimer) { GLib.Source.remove(this._hudTimer); this._hudTimer = 0; }
+    }
+
+    // Public — called by extension.js when mic/camera state changes.
+    setPrivacyState(micActive, camActive) {
+        const micWas = this._privMicActive ?? false;
+        const camWas = this._privCamActive ?? false;
+        this._privMicActive = micActive;
+        this._privCamActive = camActive;
+
+        // Update persistent dots on the closed pill
+        if (this._privMicDot) this._privMicDot.visible = micActive;
+        if (this._privCamDot) this._privCamDot.visible = camActive;
+        if (this._privDotBox) this._privDotBox.visible = micActive || camActive;
+
+        // Flash a brief HUD notification when a resource is newly claimed
+        if (micActive && !micWas)
+            this.showHud('microphone', null, 'Microphone Active');
+        if (camActive && !camWas)
+            this.showHud('camera', null, 'Camera Active');
     }
 
     _renderPeek(item) {
