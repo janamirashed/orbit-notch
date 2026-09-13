@@ -1458,8 +1458,7 @@ class OrbitNotch extends St.Widget {
         if (!this._settings.get_boolean('enable-notifications')) return;
         const isCritical = item.notif && (
             item.notif.urgency === 2 ||
-            item.notif.urgency === 3 ||
-            item.notif.urgency === MessageTray?.Urgency?.CRITICAL
+            item.notif.urgency === 3
         );
         if (!isCritical && !this._dndSettings.get_boolean('show-banners')) return;
         if (this._open) return;

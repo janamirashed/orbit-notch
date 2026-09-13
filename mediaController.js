@@ -292,13 +292,100 @@ export const OrbitMediaController = GObject.registerClass({
         return { r: Math.floor(r / count), g: Math.floor(g / count), b: Math.floor(b / count) };
     }
 
+    _resolveContainerPath(rawPath) {
+        if (GLib.file_test(rawPath, GLib.FileTest.EXISTS))
+            return rawPath;
+
+        const p = this.getActivePlayer();
+        const candidatePids = new Set();
+
+        if (p?._busName) {
+            const m = p._busName.match(/instance(\d+)/);
+            if (m) candidatePids.add(parseInt(m[1], 10));
+
+            try {
+                const res = this._connection.call_sync(
+                    'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+                    'GetConnectionUnixProcessID',
+                    new GLib.Variant('(s)', [p._busName]),
+                    null, Gio.DBusCallFlags.NONE, 500, null
+                );
+                if (res) {
+                    const [pid] = res.deep_unpack();
+                    if (pid) candidatePids.add(pid);
+                }
+            } catch (_) {}
+        }
+
+        // Expand candidate PIDs to include their children
+        for (const pid of [...candidatePids]) {
+            try {
+                const [, childData] = GLib.file_get_contents(`/proc/${pid}/task/${pid}/children`);
+                if (childData) {
+                    const str = new TextDecoder().decode(childData);
+                    for (const c of str.trim().split(/\s+/)) {
+                        const cpid = parseInt(c, 10);
+                        if (cpid) candidatePids.add(cpid);
+                    }
+                }
+            } catch (_) {}
+        }
+
+        for (const pid of candidatePids) {
+            const procPath = `/proc/${pid}/root${rawPath}`;
+            if (GLib.file_test(procPath, GLib.FileTest.EXISTS))
+                return procPath;
+        }
+
+        // Check running user processes if still not found
+        try {
+            const dir = Gio.File.new_for_path('/proc');
+            const enumerator = dir.enumerate_children(
+                'standard::name', Gio.FileQueryInfoFlags.NONE, null
+            );
+            let info;
+            while ((info = enumerator.next_file(null)) !== null) {
+                const name = info.get_name();
+                if (!/^\d+$/.test(name)) continue;
+                const procPath = `/proc/${name}/root${rawPath}`;
+                if (GLib.file_test(procPath, GLib.FileTest.EXISTS))
+                    return procPath;
+            }
+        } catch (_) {}
+
+        return null;
+    }
+
     ensureArtwork(artUrl, onMeta) {
         if (!artUrl) return;
         if (this._artMeta.has(artUrl)) { onMeta(this._artMeta.get(artUrl)); return; }
 
         if (artUrl.startsWith('file://')) {
-            const path = Gio.File.new_for_uri(artUrl).get_path();
+            let path = Gio.File.new_for_uri(artUrl).get_path();
             if (!path) return;
+
+            const resolved = this._resolveContainerPath(path);
+            if (!resolved) return;
+
+            // Cache in _artDir if reading from a container/proc path
+            if (resolved.startsWith('/proc/')) {
+                try {
+                    const [, bytes] = GLib.file_get_contents(resolved);
+                    if (bytes && bytes.length > 0) {
+                        const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, artUrl, -1);
+                        const cachedPath = GLib.build_filenamev([this._artDir, `${hash}.img`]);
+                        GLib.file_set_contents(cachedPath, bytes);
+                        path = cachedPath;
+                    } else {
+                        path = resolved;
+                    }
+                } catch (_) {
+                    path = resolved;
+                }
+            } else {
+                path = resolved;
+            }
+
             try {
                 const pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 160, 160, true);
                 this._store(artUrl, { path, palette: this._palette(pb) }, onMeta);
