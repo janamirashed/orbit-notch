@@ -1,3 +1,5 @@
+import GLib from 'gi://GLib';
+import Gio from 'gi://Gio';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -39,11 +41,21 @@ export default class OrbitExtension extends Extension {
         this._startBluetoothWatcher();
     }
 
-    // Fallback brightness watcher — subscribes to GSD Power.Screen D-Bus property.
-    // On Wayland, brightness keys sometimes bypass Main.osdWindowManager entirely.
+    // Fallback brightness watcher — GSD Power.Screen PropertiesChanged on session bus.
+    // Also tries org.gnome.Mutter.DisplayConfig since GNOME 50 on Wayland can route
+    // brightness keys through Mutter directly.
     _startBrightnessWatcher() {
         try {
             this._brightLastLevel = -1;
+
+            const handleBrightness = (pct) => {
+                if (pct < 0 || pct > 100) return;
+                if (pct === this._brightLastLevel) return;
+                this._brightLastLevel = pct;
+                if (this._notch) this._notch.showHud('brightness', pct / 100, null);
+            };
+
+            // Listen on session bus for any PropertiesChanged containing brightness
             this._brightSubId = Gio.DBus.session.signal_subscribe(
                 null,
                 'org.freedesktop.DBus.Properties',
@@ -54,13 +66,39 @@ export default class OrbitExtension extends Extension {
                 (_conn, _sender, _path, _iface, _sig, params) => {
                     try {
                         const [ifaceName, changedProps] = params.deep_unpack();
-                        if (ifaceName !== 'org.gnome.SettingsDaemon.Power.Screen') return;
-                        const bv = changedProps['Brightness'];
-                        if (bv == null) return;
-                        const pct = bv.deep_unpack();   // integer 0-100
-                        if (pct === this._brightLastLevel) return;
-                        this._brightLastLevel = pct;
-                        if (this._notch) this._notch.showHud('brightness', pct / 100, null);
+                        // GSD Power.Screen  (common in GNOME <50)
+                        if (ifaceName === 'org.gnome.SettingsDaemon.Power.Screen') {
+                            const bv = changedProps['Brightness'];
+                            if (bv != null) handleBrightness(bv.deep_unpack());
+                        }
+                        // Shell's own brightness control (GNOME 45+)
+                        if (ifaceName === 'org.gnome.Shell.Introspect' ||
+                            ifaceName === 'org.gnome.SettingsDaemon.Power') {
+                            const bv = changedProps['Brightness'] ?? changedProps['ScreenBrightness'];
+                            if (bv != null) handleBrightness(bv.deep_unpack());
+                        }
+                    } catch (_) {}
+                }
+            );
+
+            // Also poll via GSD async call to seed the initial value and verify connectivity
+            Gio.DBus.session.call(
+                'org.gnome.SettingsDaemon.Power',
+                '/org/gnome/SettingsDaemon/Power',
+                'org.freedesktop.DBus.Properties',
+                'Get',
+                new GLib.Variant('(ss)', [
+                    'org.gnome.SettingsDaemon.Power.Screen', 'Brightness',
+                ]),
+                null,
+                Gio.DBusCallFlags.NONE,
+                1500,
+                null,
+                (conn, res) => {
+                    try {
+                        const result = conn.call_finish(res);
+                        const pct = result.deep_unpack()[0].deep_unpack();
+                        handleBrightness(pct);
                     } catch (_) {}
                 }
             );
@@ -163,8 +201,10 @@ export default class OrbitExtension extends Extension {
                     // Compute 0-1 fraction.  GNOME may pass (level=0.65, maxLevel=1)
                     // or (level=65, maxLevel=100) — divide by maxLevel when present.
                     let frac = null;
-                    if (level != null) {
-                        const max = (maxLevel != null && maxLevel > 0) ? maxLevel : 100;
+                    if (level != null && level >= 0) {
+                        // GNOME ShowOSD sends level as 0-1 float; maxLevel is often absent
+                        // (arrives as -1). Only divide when maxLevel is sensibly > 1.
+                        const max = (maxLevel != null && maxLevel > 1) ? maxLevel : 1;
                         frac = Math.max(0, Math.min(1, level / max));
                     }
                     return { type, value: frac };

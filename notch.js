@@ -515,11 +515,44 @@ class OrbitNotch extends St.Widget {
         });
         this._updateLyricsBtn();
 
-        this._calBox = new St.Bin({
+        // Calendar column — wraps both the full calendar and a compact mini-date tile.
+        // _calFull  = normal OrbitCalendar widget (shown when no player)
+        // _calMini  = compact date button (shown when player is present)
+        this._calBox = new St.BoxLayout({
             style_class: 'orbit-cal-wrap',
+            vertical: true,
             y_align: Clutter.ActorAlign.FILL,
         });
+
+        // Full calendar (default, shown when no media playing)
+        this._calFull = new St.Bin({ x_expand: true, y_expand: true });
+        this._calBox.add_child(this._calFull);
+
+        // Mini date tile — visible when player is active
+        this._calMini = new St.Button({
+            style_class: 'orbit-cal-mini',
+            vertical: true,
+            y_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            x_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+            can_focus: true,
+        });
+        this._addPress(this._calMini);
+        const miniInner = new St.BoxLayout({ vertical: true, y_align: Clutter.ActorAlign.CENTER });
+        this._calMiniDay = new St.Label({ style_class: 'orbit-cal-mini-day', y_align: Clutter.ActorAlign.CENTER });
+        this._calMiniMon = new St.Label({ style_class: 'orbit-cal-mini-mon', y_align: Clutter.ActorAlign.CENTER });
+        miniInner.add_child(this._calMiniDay);
+        miniInner.add_child(this._calMiniMon);
+        this._calMini.set_child(miniInner);
+        // Clicking the mini tile switches to calendar-only view for 5 seconds, then back
+        this._calMini.connect('clicked', () => this._toggleCalendarPeek());
+        this._calBox.add_child(this._calMini);
+
+        this._updateCalMiniDate();
+
         body.add_child(this._calBox);
+
         this._openLayer.add_child(body);
 
         this._bodyNotif = new St.BoxLayout({
@@ -1194,8 +1227,51 @@ class OrbitNotch extends St.Widget {
     }
 
     _renderCalendar() {
-        if (!this._calBox) return;
-        this._calBox.set_child(this._calendar.render());
+        if (!this._calFull) return;
+        this._calFull.set_child(this._calendar.render());
+    }
+
+    // Update the mini date tile with today's day number and month abbreviation.
+    _updateCalMiniDate() {
+        if (!this._calMiniDay) return;
+        const now = new Date();
+        this._calMiniDay.text = String(now.getDate());
+        this._calMiniMon.text = now.toLocaleString('default', { month: 'short' }).toUpperCase();
+    }
+
+    // When mini tile is clicked, temporarily expand to full-calendar-only view.
+    _toggleCalendarPeek() {
+        if (this._calPeeking) {
+            this._setCalendarPeek(false);
+        } else {
+            this._setCalendarPeek(true);
+            // Auto-collapse after 5 seconds
+            if (this._calPeekTimer) { GLib.Source.remove(this._calPeekTimer); }
+            this._calPeekTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
+                this._calPeekTimer = 0;
+                this._setCalendarPeek(false);
+                return GLib.SOURCE_REMOVE;
+            });
+        }
+    }
+
+    // Show the full calendar (hiding player) or restore player view.
+    _setCalendarPeek(peek) {
+        this._calPeeking = peek;
+        const dur = 160, mode = Clutter.AnimationMode.EASE_OUT_QUAD;
+        for (const child of this._bodyMedia.get_children()) {
+            if (child === this._calBox) {
+                child.x_expand = peek ? true : false;
+                this._calFull.visible = peek;
+                this._calMini.visible = !peek;
+            } else {
+                child.ease({
+                    opacity: peek ? 0 : 255, duration: dur, mode,
+                    onComplete: () => { child.visible = !peek; },
+                });
+                if (!peek) child.visible = true;
+            }
+        }
     }
 
     _updateBattery() {
@@ -1693,30 +1769,35 @@ class OrbitNotch extends St.Widget {
     }
 
 
-    // Toggle between full-width calendar (no player) and full-width player (media active).
+    // Swap between full-width calendar (no player) and mini date tile + player.
     _setPlayerVisible(visible) {
         if (!this._bodyMedia) return;
         if (this._playerVisible === visible) return;
         this._playerVisible = visible;
+
+        // Cancel any active calendar peek when player state changes
+        if (this._calPeekTimer) { GLib.Source.remove(this._calPeekTimer); this._calPeekTimer = 0; }
+        this._calPeeking = false;
 
         const dur = 180;
         const mode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
         for (const child of this._bodyMedia.get_children()) {
             if (child === this._calBox) {
-                // Calendar: show when NO player, hide when player is present
-                if (!visible) {
-                    child.visible = true;
-                    child.ease({ opacity: 255, duration: dur, mode });
+                if (visible) {
+                    // Player active → show mini date tile, hide full calendar
+                    this._calFull.visible = false;
+                    this._calMini.visible = true;
+                    this._updateCalMiniDate();
+                    child.x_expand = false;
                 } else {
-                    child.ease({
-                        opacity: 0, duration: dur, mode,
-                        onComplete: () => { child.visible = false; },
-                    });
+                    // No player → show full calendar, hide mini tile
+                    this._calFull.visible = true;
+                    this._calMini.visible = false;
+                    child.x_expand = true;
                 }
-                child.x_expand = !visible;
             } else {
-                // Player widgets: show when player is present, hide otherwise
+                // Player widgets: fade in/out
                 if (visible) {
                     child.visible = true;
                     child.ease({ opacity: 255, duration: dur, mode });
