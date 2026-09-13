@@ -1106,25 +1106,6 @@ class OrbitNotch extends St.Widget {
         this._headerCalBtn.connect('clicked', () => this._toggleCalendarMode());
         sys.add_child(this._headerCalBtn);
 
-        const battBox = new St.BoxLayout({
-            style_class: 'orbit-batt-box',
-            y_align: Clutter.ActorAlign.CENTER,
-            vertical: false,
-        });
-        this._battLabel = new St.Label({
-            style_class: 'orbit-batt-pct',
-            text: '',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._battIcon = new St.Icon({
-            style_class: 'orbit-batt-icon',
-            icon_size: 16,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        battBox.add_child(this._battLabel);
-        battBox.add_child(this._battIcon);
-        sys.add_child(battBox);
-
         header.add_child(sys);
 
         return header;
@@ -1215,29 +1196,16 @@ class OrbitNotch extends St.Widget {
     }
 
     _updateBattery() {
-        if (!this._battLabel || !this._battIcon) return;
         const dev = this._upower ? this._upower.get_display_device() : null;
         const present = dev && dev.is_present &&
             dev.kind === UPowerGlib.DeviceKind.BATTERY;
         if (!present) {
-            this._battLabel.text = '';
-            this._battIcon.visible = false;
             this._lastChargingState = undefined;
             return;
         }
         const pct = Math.round(dev.percentage);
         const charging = dev.state === UPowerGlib.DeviceState.CHARGING ||
                          dev.state === UPowerGlib.DeviceState.FULLY_CHARGED;
-        this._battLabel.text = `${pct}%`;
-        const level = Math.max(0, Math.min(100, Math.round(pct / 10) * 10));
-        this._battIcon.icon_name = charging
-            ? `battery-level-${level}-charging-symbolic`
-            : `battery-level-${level}-symbolic`;
-        if (charging)
-            this._battIcon.add_style_class_name('charging');
-        else
-            this._battIcon.remove_style_class_name('charging');
-        this._battIcon.visible = true;
 
         // Show charger HUD when plug/unplug state changes
         if (this._lastChargingState !== undefined && this._lastChargingState !== charging) {
