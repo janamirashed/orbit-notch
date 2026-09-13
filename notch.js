@@ -531,7 +531,6 @@ class OrbitNotch extends St.Widget {
         // Mini date tile — visible when player is active
         this._calMini = new St.Button({
             style_class: 'orbit-cal-mini',
-            vertical: true,
             y_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
             x_align: Clutter.ActorAlign.CENTER,
