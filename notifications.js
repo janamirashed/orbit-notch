@@ -1,4 +1,6 @@
 import GObject from 'gi://GObject';
+import Gio from 'gi://Gio';
+import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 export const OrbitNotifications = GObject.registerClass({
@@ -66,7 +68,50 @@ export const OrbitNotifications = GObject.registerClass({
             if (ignored.some(x => x.trim().toLowerCase() === low)) return;
         }
         let gicon = null;
-        try { gicon = n.gicon ?? source.icon ?? null; } catch (e) {}
+        try {
+            // Check if notification itself has an image/icon
+            gicon = n.gicon || n.icon || null;
+
+            // If appName is specified, check if it matches a specific PWA or desktop app
+            const candidates = [appName, source?.title, source?.name].filter(Boolean);
+            const appSys = Shell.AppSystem.get_default();
+
+            if (appSys && candidates.length) {
+                const installed = appSys.get_installed();
+                for (const raw of candidates) {
+                    const norm = raw.toLowerCase().trim();
+                    if (!norm || norm === 'chromium' || norm === 'google chrome' || norm === 'brave') continue;
+
+                    let matched = installed.find(a => a.get_name()?.toLowerCase() === norm);
+                    if (!matched) {
+                        matched = installed.find(a => {
+                            const aname = a.get_name()?.toLowerCase();
+                            return aname && (norm.includes(aname) || aname.includes(norm));
+                        });
+                    }
+                    if (!matched) {
+                        matched = installed.find(a => {
+                            const aid = a.get_id()?.toLowerCase() ?? '';
+                            return aid.includes(norm);
+                        });
+                    }
+                    if (matched) {
+                        const icon = matched.get_icon();
+                        if (icon) {
+                            gicon = icon;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Source fallbacks
+            if (!gicon) gicon = source?.icon || source?.gicon || null;
+            if (!gicon && source?.app) gicon = source.app.get_icon();
+            if (!gicon && source?.getIcon) gicon = source.getIcon();
+            if (!gicon && n.iconName) gicon = Gio.ThemedIcon.new(n.iconName);
+            if (!gicon && source?.iconName) gicon = Gio.ThemedIcon.new(source.iconName);
+        } catch (e) {}
         const item = {
             id: ++this._seq,
             appName,

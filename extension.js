@@ -98,7 +98,8 @@ export default class OrbitExtension extends Extension {
                     try {
                         const result = conn.call_finish(res);
                         const pct = result.deep_unpack()[0].deep_unpack();
-                        handleBrightness(pct);
+                        if (typeof pct === 'number' && pct >= 0)
+                            this._brightLastLevel = pct;
                     } catch (_) {}
                 }
             );
@@ -173,24 +174,25 @@ export default class OrbitExtension extends Extension {
         this._origOsdShow = osd.show;
         this._origOsdShowOne = osd.showOne ?? null;
         this._origOsdShowAll = osd.showAll ?? null;
+        this._origOsdShowOsdWindow = osd._showOsdWindow ?? null;
 
         const self = this;
 
         // Symbols that indicate volume/brightness actions
         const hudIconPatterns = [
-            { re: /audio-volume|audio-speaker|microphone-sensitivity/, type: 'volume' },
-            { re: /display-brightness|screen-brightness|keyboard-brightness/, type: 'brightness' },
+            { re: /audio-volume|audio-speaker|microphone-sensitivity/i, type: 'volume' },
+            { re: /brightness/i, type: 'brightness' },
         ];
 
         const parseOsdCall = (icon, level, maxLevel) => {
-            // GNOME passes Gio.ThemedIcon (has get_names()), not a plain string.
-            // Fall through multiple APIs until we get something.
             let name = '';
             if (icon) {
-                if (typeof icon.icon_name === 'string' && icon.icon_name)
-                    name = icon.icon_name;                          // St.Icon / plain obj
+                if (typeof icon === 'string')
+                    name = icon;
+                else if (typeof icon.icon_name === 'string' && icon.icon_name)
+                    name = icon.icon_name;
                 else if (typeof icon.get_names === 'function')
-                    name = icon.get_names()?.[0] ?? '';             // Gio.ThemedIcon ← real path
+                    name = icon.get_names()?.[0] ?? '';
                 else if (typeof icon.get_icon_name === 'function')
                     name = icon.get_icon_name() ?? '';
                 else if (typeof icon.to_string === 'function')
@@ -198,14 +200,14 @@ export default class OrbitExtension extends Extension {
             }
             for (const { re, type } of hudIconPatterns) {
                 if (re.test(name)) {
-                    // Compute 0-1 fraction.  GNOME may pass (level=0.65, maxLevel=1)
-                    // or (level=65, maxLevel=100) — divide by maxLevel when present.
                     let frac = null;
                     if (level != null && level >= 0) {
-                        // GNOME ShowOSD sends level as 0-1 float; maxLevel is often absent
-                        // (arrives as -1). Only divide when maxLevel is sensibly > 1.
-                        const max = (maxLevel != null && maxLevel > 1) ? maxLevel : 1;
-                        frac = Math.max(0, Math.min(1, level / max));
+                        if (level > 1) {
+                            const max = (maxLevel != null && maxLevel > 1) ? maxLevel : 100;
+                            frac = Math.max(0, Math.min(1, level / max));
+                        } else {
+                            frac = Math.max(0, Math.min(1, level));
+                        }
                     }
                     return { type, value: frac };
                 }
@@ -225,7 +227,28 @@ export default class OrbitExtension extends Extension {
             }
         };
 
-        // GNOME 49+ has showOne / showAll; earlier has show
+        // GNOME 50 show signature is: show(icon, label, levels)
+        // Earlier GNOME signature: show(monitorIndex, icon, label, level, maxLevel)
+        osd.show = function(...args) {
+            let icon = null, level = null, maxLevel = null;
+            if (typeof args[0] === 'number') {
+                // Older GNOME: (monitorIndex, icon, label, level, maxLevel)
+                [, icon, , level, maxLevel] = args;
+            } else {
+                // GNOME 50+: (icon, label, levels)
+                [icon] = args;
+                const levels = args[2];
+                if (levels && typeof levels === 'object') {
+                    const primary = Main.layoutManager.primaryIndex ?? 0;
+                    const entry = levels[primary] ?? Object.values(levels)[0];
+                    level = entry?.level ?? null;
+                    maxLevel = entry?.maxLevel ?? null;
+                }
+            }
+            if (routeOsd(icon, level, maxLevel)) return;
+            self._origOsdShow.apply(osd, args);
+        };
+
         if (osd.showOne) {
             osd.showOne = function(monitorIndex, icon, label, level, maxLevel) {
                 if (routeOsd(icon, level, maxLevel)) return;
@@ -238,11 +261,12 @@ export default class OrbitExtension extends Extension {
                 self._origOsdShowAll.call(osd, icon, label, level, maxLevel);
             };
         }
-        // Always-present fallback
-        osd.show = function(monitorIndex, icon, label, level, maxLevel) {
-            if (routeOsd(icon, level, maxLevel)) return;
-            self._origOsdShow.call(osd, monitorIndex, icon, label, level, maxLevel);
-        };
+        if (osd._showOsdWindow) {
+            osd._showOsdWindow = function(monitorIndex, icon, label, level, maxLevel) {
+                if (routeOsd(icon, level, maxLevel)) return;
+                self._origOsdShowOsdWindow.call(osd, monitorIndex, icon, label, level, maxLevel);
+            };
+        }
     }
 
     _restoreOsd() {
@@ -251,6 +275,7 @@ export default class OrbitExtension extends Extension {
         if (this._origOsdShow) { osd.show = this._origOsdShow; this._origOsdShow = null; }
         if (this._origOsdShowOne) { osd.showOne = this._origOsdShowOne; this._origOsdShowOne = null; }
         if (this._origOsdShowAll) { osd.showAll = this._origOsdShowAll; this._origOsdShowAll = null; }
+        if (this._origOsdShowOsdWindow) { osd._showOsdWindow = this._origOsdShowOsdWindow; this._origOsdShowOsdWindow = null; }
     }
 
     _suppressSystemBanners() {
@@ -259,15 +284,10 @@ export default class OrbitExtension extends Extension {
         if (!tray) return;
 
         if (enabled) {
-            // Block GNOME's floating banner in two ways for robustness across versions:
-            // 1. The documented property (GNOME <45)
             tray.bannerBlocked = true;
-
-            // 2. Patch _showNotification directly (GNOME 45+ redesign)
-            if (tray._showNotification && !this._origShowNotif) {
-                this._origShowNotif = tray._showNotification.bind(tray);
-                // Suppress only the *banner popup* — notification still lands in tray
-                tray._showNotification = () => {};
+            if (tray._bannerBin) {
+                tray._bannerBin.opacity = 0;
+                tray._bannerBin.visible = false;
             }
         } else {
             this._restoreSystemBanners();
@@ -278,6 +298,10 @@ export default class OrbitExtension extends Extension {
         const tray = Main.messageTray;
         if (!tray) return;
         tray.bannerBlocked = false;
+        if (tray._bannerBin) {
+            tray._bannerBin.opacity = 255;
+            tray._bannerBin.visible = true;
+        }
         if (this._origShowNotif) {
             tray._showNotification = this._origShowNotif;
             this._origShowNotif = null;

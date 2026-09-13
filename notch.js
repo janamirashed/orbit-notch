@@ -506,6 +506,7 @@ class OrbitNotch extends St.Widget {
         controls.add_child(this._nextBtn);
         right.add_child(controls);
         body.add_child(right);
+        this._playerRight = right;
 
         this._lyricsSettingId = this._settings.connect('changed::enable-lyrics', () => {
             const on = this._settings.get_boolean('enable-lyrics');
@@ -515,41 +516,13 @@ class OrbitNotch extends St.Widget {
         });
         this._updateLyricsBtn();
 
-        // Calendar column — wraps both the full calendar and a compact mini-date tile.
-        // _calFull  = normal OrbitCalendar widget (shown when no player)
-        // _calMini  = compact date button (shown when player is present)
-        this._calBox = new St.BoxLayout({
+        this._calBox = new St.Bin({
             style_class: 'orbit-cal-wrap',
-            vertical: true,
-            y_align: Clutter.ActorAlign.FILL,
-        });
-
-        // Full calendar (default, shown when no media playing)
-        this._calFull = new St.Bin({ x_expand: true, y_expand: true });
-        this._calBox.add_child(this._calFull);
-
-        // Mini date tile — visible when player is active
-        this._calMini = new St.Button({
-            style_class: 'orbit-cal-mini',
+            x_expand: true,
             y_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
-            x_align: Clutter.ActorAlign.CENTER,
-            visible: false,
-            can_focus: true,
+            y_align: Clutter.ActorAlign.FILL,
+            x_align: Clutter.ActorAlign.FILL,
         });
-        this._addPress(this._calMini);
-        const miniInner = new St.BoxLayout({ vertical: true, y_align: Clutter.ActorAlign.CENTER });
-        this._calMiniDay = new St.Label({ style_class: 'orbit-cal-mini-day', y_align: Clutter.ActorAlign.CENTER });
-        this._calMiniMon = new St.Label({ style_class: 'orbit-cal-mini-mon', y_align: Clutter.ActorAlign.CENTER });
-        miniInner.add_child(this._calMiniDay);
-        miniInner.add_child(this._calMiniMon);
-        this._calMini.set_child(miniInner);
-        // Clicking the mini tile switches to calendar-only view for 5 seconds, then back
-        this._calMini.connect('clicked', () => this._toggleCalendarPeek());
-        this._calBox.add_child(this._calMini);
-
-        this._updateCalMiniDate();
-
         body.add_child(this._calBox);
 
         this._openLayer.add_child(body);
@@ -1113,29 +1086,25 @@ class OrbitNotch extends St.Widget {
         this._updateShelfBadge();
 
         header.add_child(new St.Widget({ x_expand: true }));
-        this._headerDate = new St.Label({
-            style_class: 'orbit-header-date', y_align: Clutter.ActorAlign.CENTER });
-        header.add_child(this._headerDate);
-        header.add_child(new St.Widget({ x_expand: true }));
 
         const sys = new St.BoxLayout({
             style_class: 'orbit-sys',
             y_align: Clutter.ActorAlign.CENTER,
             vertical: false,
         });
-        const gear = new St.Button({
+        this._headerCalBtn = new St.Button({
             style_class: 'orbit-sys-btn',
             can_focus: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        gear.set_child(new St.Icon({
-            icon_name: 'emblem-system-symbolic',
+        this._headerCalBtn.set_child(new St.Icon({
+            icon_name: 'x-office-calendar-symbolic',
             icon_size: 16,
             y_align: Clutter.ActorAlign.CENTER,
         }));
-        this._addPress(gear);
-        gear.connect('clicked', () => this._openPrefs());
-        sys.add_child(gear);
+        this._addPress(this._headerCalBtn);
+        this._headerCalBtn.connect('clicked', () => this._toggleCalendarMode());
+        sys.add_child(this._headerCalBtn);
 
         const battBox = new St.BoxLayout({
             style_class: 'orbit-batt-box',
@@ -1226,51 +1195,23 @@ class OrbitNotch extends St.Widget {
     }
 
     _renderCalendar() {
-        if (!this._calFull) return;
-        this._calFull.set_child(this._calendar.render());
+        if (!this._calBox) return;
+        this._calBox.set_child(this._calendar.render());
     }
 
-    // Update the mini date tile with today's day number and month abbreviation.
-    _updateCalMiniDate() {
-        if (!this._calMiniDay) return;
-        const now = new Date();
-        this._calMiniDay.text = String(now.getDate());
-        this._calMiniMon.text = now.toLocaleString('default', { month: 'short' }).toUpperCase();
-    }
+    _toggleCalendarMode() {
+        if (!this._open) this.open();
+        if (this._view !== 'media') this.showView('media');
 
-    // When mini tile is clicked, temporarily expand to full-calendar-only view.
-    _toggleCalendarPeek() {
-        if (this._calPeeking) {
-            this._setCalendarPeek(false);
-        } else {
-            this._setCalendarPeek(true);
-            // Auto-collapse after 5 seconds
-            if (this._calPeekTimer) { GLib.Source.remove(this._calPeekTimer); }
-            this._calPeekTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
-                this._calPeekTimer = 0;
-                this._setCalendarPeek(false);
-                return GLib.SOURCE_REMOVE;
-            });
+        const st = this._media.getState();
+        if (!st.hasPlayer) {
+            this._calendar.resetSelected();
+            this._renderCalendar();
+            return;
         }
-    }
 
-    // Show the full calendar (hiding player) or restore player view.
-    _setCalendarPeek(peek) {
-        this._calPeeking = peek;
-        const dur = 160, mode = Clutter.AnimationMode.EASE_OUT_QUAD;
-        for (const child of this._bodyMedia.get_children()) {
-            if (child === this._calBox) {
-                child.x_expand = peek ? true : false;
-                this._calFull.visible = peek;
-                this._calMini.visible = !peek;
-            } else {
-                child.ease({
-                    opacity: peek ? 0 : 255, duration: dur, mode,
-                    onComplete: () => { child.visible = !peek; },
-                });
-                if (!peek) child.visible = true;
-            }
-        }
+        this._calendarForced = !this._calendarForced;
+        this._applyHomeLayout();
     }
 
     _updateBattery() {
@@ -1515,7 +1456,12 @@ class OrbitNotch extends St.Widget {
 
     _showPeek(item) {
         if (!this._settings.get_boolean('enable-notifications')) return;
-        if (!this._dndSettings.get_boolean('show-banners')) return;
+        const isCritical = item.notif && (
+            item.notif.urgency === 2 ||
+            item.notif.urgency === 3 ||
+            item.notif.urgency === MessageTray?.Urgency?.CRITICAL
+        );
+        if (!isCritical && !this._dndSettings.get_boolean('show-banners')) return;
         if (this._open) return;
         this._renderPeek(item);
         this._peekItem = item;
@@ -1768,44 +1714,51 @@ class OrbitNotch extends St.Widget {
     }
 
 
-    // Swap between full-width calendar (no player) and mini date tile + player.
-    _setPlayerVisible(visible) {
+    // Update body layout: full-width calendar (when no player or when toggled),
+    // or full-width media player.
+    _applyHomeLayout() {
         if (!this._bodyMedia) return;
-        if (this._playerVisible === visible) return;
-        this._playerVisible = visible;
+        const st = this._media.getState();
+        const hasMedia = !!st.hasPlayer;
+        const showCalendar = !hasMedia || !!this._calendarForced;
+        const showPlayer = hasMedia && !this._calendarForced;
 
-        // Cancel any active calendar peek when player state changes
-        if (this._calPeekTimer) { GLib.Source.remove(this._calPeekTimer); this._calPeekTimer = 0; }
-        this._calPeeking = false;
+        if (this._headerCalBtn) {
+            if (showCalendar && hasMedia) {
+                this._headerCalBtn.add_style_class_name('active');
+            } else {
+                this._headerCalBtn.remove_style_class_name('active');
+            }
+        }
 
         const dur = 180;
         const mode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-        for (const child of this._bodyMedia.get_children()) {
-            if (child === this._calBox) {
-                if (visible) {
-                    // Player active → show mini date tile, hide full calendar
-                    this._calFull.visible = false;
-                    this._calMini.visible = true;
-                    this._updateCalMiniDate();
-                    child.x_expand = false;
-                } else {
-                    // No player → show full calendar, hide mini tile
-                    this._calFull.visible = true;
-                    this._calMini.visible = false;
-                    child.x_expand = true;
-                }
+        if (this._calBox) {
+            if (showCalendar) {
+                this._calBox.visible = true;
+                this._calBox.x_expand = true;
+                this._calBox.ease({ opacity: 255, duration: dur, mode });
+                this._renderCalendar();
             } else {
-                // Player widgets: fade in/out
-                if (visible) {
-                    child.visible = true;
-                    child.ease({ opacity: 255, duration: dur, mode });
-                } else {
-                    child.ease({
-                        opacity: 0, duration: dur, mode,
-                        onComplete: () => { child.visible = false; },
-                    });
-                }
+                this._calBox.ease({
+                    opacity: 0, duration: dur, mode,
+                    onComplete: () => { if (this._calBox) this._calBox.visible = false; },
+                });
+            }
+        }
+
+        const playerWidgets = [this._openArt, this._playerRight].filter(Boolean);
+        for (const w of playerWidgets) {
+            if (showPlayer) {
+                w.visible = true;
+                if (w === this._playerRight) w.x_expand = true;
+                w.ease({ opacity: 255, duration: dur, mode });
+            } else {
+                w.ease({
+                    opacity: 0, duration: dur, mode,
+                    onComplete: () => { w.visible = false; },
+                });
             }
         }
     }
@@ -1826,13 +1779,12 @@ class OrbitNotch extends St.Widget {
             this._swapIcon(this._playBtn.child, 'media-playback-start-symbolic');
             this._updateClosedDot();
             this._clearLyrics();
-            // No player → hide player area, expand calendar full width
-            this._setPlayerVisible(false);
+            this._calendarForced = false;
+            this._applyHomeLayout();
             return;
         }
 
-        // Player present → show player, calendar shrinks back
-        this._setPlayerVisible(true);
+        this._applyHomeLayout();
         this._title.text = st.title || 'Unknown';
         this._artist.text = st.artist || '';
         this._swapIcon(this._playBtn.child,
@@ -1998,10 +1950,19 @@ class OrbitNotch extends St.Widget {
     _setArt(bin, artUrl) {
         if (artUrl && artUrl.length) {
             bin.set_style(`background-image: url("${artUrl}"); background-size: cover;`);
+            bin.set_child(null);
             bin.visible = true;
         } else {
             bin.set_style('');
-            bin.visible = false;
+            const icon = new St.Icon({
+                icon_name: 'audio-x-generic-symbolic',
+                icon_size: 44,
+                x_align: Clutter.ActorAlign.CENTER,
+                y_align: Clutter.ActorAlign.CENTER,
+                style_class: 'orbit-art-fallback-icon',
+            });
+            bin.set_child(icon);
+            bin.visible = true;
         }
     }
 
@@ -2016,9 +1977,6 @@ class OrbitNotch extends St.Widget {
         const now = new Date();
         if (this._closedTime)
             this._closedTime.text = now.toLocaleTimeString([],
-                { hour: 'numeric', minute: '2-digit' });
-        if (this._headerDate)
-            this._headerDate.text = now.toLocaleTimeString([],
                 { hour: 'numeric', minute: '2-digit' });
     }
 

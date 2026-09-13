@@ -305,21 +305,49 @@ export const OrbitMediaController = GObject.registerClass({
             } catch (e) {}
             return;
         }
+
+        if (artUrl.startsWith('data:')) {
+            try {
+                const commaIdx = artUrl.indexOf(',');
+                if (commaIdx > 0) {
+                    const b64 = artUrl.substring(commaIdx + 1);
+                    const bytes = GLib.base64_decode(b64);
+                    if (bytes && bytes.length > 0) {
+                        const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, artUrl, -1);
+                        const path = GLib.build_filenamev([this._artDir, `${hash}.img`]);
+                        GLib.file_set_contents(path, bytes);
+                        const stream = Gio.MemoryInputStream.new_from_bytes(new GLib.Bytes(bytes));
+                        const pb = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, 160, 160, true, null);
+                        this._store(artUrl, { path, palette: this._palette(pb) }, onMeta);
+                        return;
+                    }
+                }
+            } catch (e) {}
+            return;
+        }
+
         if (!/^https?:\/\//.test(artUrl)) return;
 
-        const msg = Soup.Message.new('GET', artUrl);
-        this._soup.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, this._cancellable, (sess, res) => {
-            try {
-                const bytes = sess.send_and_read_finish(res);
-                if (!bytes || bytes.get_size() === 0) return;
-                const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, artUrl, -1);
-                const path = GLib.build_filenamev([this._artDir, `${hash}.img`]);
-                GLib.file_set_contents(path, bytes.get_data());
-                const stream = Gio.MemoryInputStream.new_from_bytes(bytes);
-                const pb = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, 160, 160, true, null);
-                this._store(artUrl, { path, palette: this._palette(pb) }, onMeta);
-            } catch (e) {  }
-        });
+        try {
+            const msg = Soup.Message.new('GET', artUrl);
+            if (!msg) return;
+            msg.request_headers.append(
+                'User-Agent',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            );
+            this._soup.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, this._cancellable, (sess, res) => {
+                try {
+                    const bytes = sess.send_and_read_finish(res);
+                    if (!bytes || bytes.get_size() === 0) return;
+                    const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, artUrl, -1);
+                    const path = GLib.build_filenamev([this._artDir, `${hash}.img`]);
+                    GLib.file_set_contents(path, bytes.get_data());
+                    const stream = Gio.MemoryInputStream.new_from_bytes(bytes);
+                    const pb = GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, 160, 160, true, null);
+                    this._store(artUrl, { path, palette: this._palette(pb) }, onMeta);
+                } catch (e) {}
+            });
+        } catch (e) {}
     }
 
     _store(artUrl, meta, onMeta) {

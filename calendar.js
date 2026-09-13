@@ -41,7 +41,9 @@ export const OrbitCalendar = GObject.registerClass({
         this._proxy = null;
         this._sigIds = [];
         this._selected = new Date();
-        this._anchor = startOfDay(new Date());
+        const d = startOfDay(new Date());
+        d.setDate(d.getDate() - d.getDay());
+        this._anchor = d;
     }
 
     start() {
@@ -78,7 +80,7 @@ export const OrbitCalendar = GObject.registerClass({
     _requestRangeAround(date) {
         if (!this._proxy) return;
         const since = Math.floor(startOfDay(date).getTime() / 1000) - 86400;
-        const until = since + 86400 * 9;
+        const until = since + 86400 * 14;
         try {
             this._proxy.SetTimeRangeRemote(since, until, true, (_r, err) => {
                 if (!err) this._pull();
@@ -122,8 +124,11 @@ export const OrbitCalendar = GObject.registerClass({
     }
 
     resetSelected() {
-        this._selected = new Date();
-        this._anchor = startOfDay(new Date());
+        const today = new Date();
+        this._selected = today;
+        const d = startOfDay(today);
+        d.setDate(d.getDate() - d.getDay());
+        this._anchor = d;
         this._requestRangeAround(this._anchor);
     }
 
@@ -134,12 +139,19 @@ export const OrbitCalendar = GObject.registerClass({
     }
 
     render() {
-        const box = new St.BoxLayout({ style_class: 'orbit-cal', vertical: true });
+        const box = new St.BoxLayout({
+            style_class: 'orbit-cal', vertical: true,
+            x_expand: true, y_expand: true,
+        });
 
         const today = new Date();
         const anchor = this._anchor;
 
-        const header = new St.BoxLayout({ style_class: 'orbit-cal-header' });
+        const header = new St.BoxLayout({
+            style_class: 'orbit-cal-header',
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
 
         const monthCol = new St.BoxLayout({ vertical: true, y_align: Clutter.ActorAlign.CENTER });
         monthCol.add_child(new St.Label({
@@ -149,16 +161,25 @@ export const OrbitCalendar = GObject.registerClass({
         header.add_child(monthCol);
         header.add_child(new St.Widget({ x_expand: true }));
 
-        const nav = new St.BoxLayout({ style_class: 'orbit-cal-nav' });
+        const nav = new St.BoxLayout({
+            style_class: 'orbit-cal-nav',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
 
-        const prev = new St.Button({ style_class: 'orbit-cal-navbtn', can_focus: true });
+        const prev = new St.Button({
+            style_class: 'orbit-cal-navbtn', can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         prev.set_child(new St.Icon({ icon_name: 'pan-start-symbolic', icon_size: 14 }));
-        prev.connect('clicked', () => this.shiftDays(-1));
+        prev.connect('clicked', () => this.shiftDays(-7));
         nav.add_child(prev);
 
         const sel = this._selected;
-        const strip = new St.BoxLayout({ style_class: 'orbit-cal-strip', reactive: true });
-        for (let i = 0; i < 3; i++) {
+        const strip = new St.BoxLayout({
+            style_class: 'orbit-cal-strip', reactive: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        for (let i = 0; i < 7; i++) {
             const d = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + i);
             const isToday = sameDay(d, today);
             const isSel = sameDay(d, sel);
@@ -175,7 +196,7 @@ export const OrbitCalendar = GObject.registerClass({
             if (isToday) discClass += ' today';
             else if (isSel) discClass += ' sel';
             const disc = new St.Bin({ style_class: discClass, x_align: Clutter.ActorAlign.CENTER });
-            disc.set_size(28, 28);
+            disc.set_size(30, 30);
             const num = new St.Label({ style_class: 'orbit-cal-num', text: `${d.getDate()}` });
             num.clutter_text.set_line_alignment(Pango.Alignment.CENTER);
             disc.set_child(num);
@@ -189,18 +210,21 @@ export const OrbitCalendar = GObject.registerClass({
         strip.connect('scroll-event', (_a, ev) => {
             const dir = ev.get_scroll_direction();
             if (dir === Clutter.ScrollDirection.UP || dir === Clutter.ScrollDirection.LEFT) {
-                this.shiftDays(-1); return Clutter.EVENT_STOP;
+                this.shiftDays(-7); return Clutter.EVENT_STOP;
             }
             if (dir === Clutter.ScrollDirection.DOWN || dir === Clutter.ScrollDirection.RIGHT) {
-                this.shiftDays(1); return Clutter.EVENT_STOP;
+                this.shiftDays(7); return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
         });
         nav.add_child(strip);
 
-        const next = new St.Button({ style_class: 'orbit-cal-navbtn', can_focus: true });
+        const next = new St.Button({
+            style_class: 'orbit-cal-navbtn', can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         next.set_child(new St.Icon({ icon_name: 'pan-end-symbolic', icon_size: 14 }));
-        next.connect('clicked', () => this.shiftDays(1));
+        next.connect('clicked', () => this.shiftDays(7));
         nav.add_child(next);
 
         header.add_child(nav);

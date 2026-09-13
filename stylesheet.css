@@ -190,36 +190,11 @@
 }
 
 .orbit-cal-wrap {
-    width: 250px;
+    /* Full width - expands to fill container */
 }
 
-/* Compact date tile — shown in place of full calendar when media player is active */
-.orbit-cal-mini {
-    width: 58px;
-    min-height: 68px;
-    background-color: rgba(255, 255, 255, 0.10);
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    padding: 6px 4px;
-}
-
-.orbit-cal-mini:hover {
-    background-color: rgba(255, 255, 255, 0.18);
-}
-
-.orbit-cal-mini-day {
-    color: #ffffff;
-    font-size: 24px;
-    font-weight: 700;
-    text-align: center;
-}
-
-.orbit-cal-mini-mon {
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 10px;
-    font-weight: 600;
-    text-align: center;
-    letter-spacing: 0.5px;
+.orbit-art-fallback-icon {
+    color: rgba(255, 255, 255, 0.45);
 }
 
 
