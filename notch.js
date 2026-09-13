@@ -1693,29 +1693,40 @@ class OrbitNotch extends St.Widget {
     }
 
 
-    // Show or hide the media player column (art + controls), letting calendar fill the gap.
+    // Toggle between full-width calendar (no player) and full-width player (media active).
     _setPlayerVisible(visible) {
-        if (!this._openArt) return;
+        if (!this._bodyMedia) return;
         if (this._playerVisible === visible) return;
         this._playerVisible = visible;
 
-        // Album art + right panel (title, scrubber, controls)
-        // The body BoxLayout is: [_openArt][right][_calBox]
-        // We show/hide everything except _calBox
-        for (const child of this._bodyMedia.get_children()) {
-            if (child === this._calBox) continue;   // always visible
-            child.ease({
-                opacity: visible ? 255 : 0,
-                duration: 200,
-                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
-                onComplete: () => { child.visible = visible; },
-            });
-            if (visible) child.visible = true;
-        }
+        const dur = 180;
+        const mode = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-        // Calendar: expand to fill when player hidden
-        if (this._calBox) {
-            this._calBox.x_expand = !visible;
+        for (const child of this._bodyMedia.get_children()) {
+            if (child === this._calBox) {
+                // Calendar: show when NO player, hide when player is present
+                if (!visible) {
+                    child.visible = true;
+                    child.ease({ opacity: 255, duration: dur, mode });
+                } else {
+                    child.ease({
+                        opacity: 0, duration: dur, mode,
+                        onComplete: () => { child.visible = false; },
+                    });
+                }
+                child.x_expand = !visible;
+            } else {
+                // Player widgets: show when player is present, hide otherwise
+                if (visible) {
+                    child.visible = true;
+                    child.ease({ opacity: 255, duration: dur, mode });
+                } else {
+                    child.ease({
+                        opacity: 0, duration: dur, mode,
+                        onComplete: () => { child.visible = false; },
+                    });
+                }
+            }
         }
     }
 

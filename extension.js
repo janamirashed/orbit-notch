@@ -144,7 +144,7 @@ export default class OrbitExtension extends Extension {
             { re: /display-brightness|screen-brightness|keyboard-brightness/, type: 'brightness' },
         ];
 
-        const parseOsdCall = (icon, level) => {
+        const parseOsdCall = (icon, level, maxLevel) => {
             // GNOME passes Gio.ThemedIcon (has get_names()), not a plain string.
             // Fall through multiple APIs until we get something.
             let name = '';
@@ -176,8 +176,13 @@ export default class OrbitExtension extends Extension {
         const routeOsd = (icon, level, maxLevel) => {
             const matched = parseOsdCall(icon, level, maxLevel);
             if (!matched) return false;
-            if (self._notch) self._notch.showHud(matched.type, matched.value);
-            return true;
+            try {
+                if (self._notch) self._notch.showHud(matched.type, matched.value);
+                return true;
+            } catch (e) {
+                logError(e, 'OrbitDynamicIsland: showHud failed, falling back to system OSD');
+                return false;   // let system OSD show
+            }
         };
 
         // GNOME 49+ has showOne / showAll; earlier has show
