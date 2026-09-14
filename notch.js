@@ -21,6 +21,7 @@ import { OrbitCalendar } from './calendar.js';
 import { OrbitVisualizer } from './visualizer.js';
 import { OrbitNotifications } from './notifications.js';
 import { OrbitShelf } from './shelf.js';
+import { OrbitTasks } from './tasks.js';
 import { LyricsClient } from './lyricsClient.js';
 import { OrbitLyricsWidget } from './lyricsWidget.js';
 
@@ -124,6 +125,11 @@ class OrbitNotch extends St.Widget {
             if (this._view === 'shelf' && this._openLayer.opacity > 0) this._renderShelf();
         });
 
+        this._tasks = new OrbitTasks();
+        this._tasksChangedId = this._tasks.connect('changed', () => {
+            if (this._view === 'shelf' && this._openLayer.opacity > 0) this._renderTasks();
+        });
+
         try {
             this._upower = UPowerGlib.Client.new_full(null);
             this._battId = this._upower.connect('notify::display-device', () => this._updateBattery());
@@ -146,6 +152,7 @@ class OrbitNotch extends St.Widget {
 
         this._hoverId = this.connect('notify::hover', () => this._onHover());
         this.connect('button-press-event', () => this._onClick());
+        this.connect('scroll-event', (_actor, event) => this._onScroll(event));
         this._mediaId = this._media.connect('changed', () => this._onMediaChanged());
 
         this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
@@ -556,22 +563,89 @@ class OrbitNotch extends St.Widget {
     }
 
     _buildShelfBody() {
-
         this._bodyShelf = new St.BoxLayout({
             style_class: 'orbit-shelf-body', vertical: true,
             x_expand: true, y_expand: true, visible: false,
             reactive: true, can_focus: true,
         });
 
-        const head = new St.BoxLayout({ style_class: 'orbit-shelf-head' });
-        head.add_child(new St.Label({ style_class: 'orbit-shelf-title', text: 'Shelf', x_expand: true }));
-        this._shelfHint = new St.Label({ style_class: 'orbit-shelf-hint', text: 'paste with Ctrl+V' });
-        head.add_child(this._shelfHint);
-        const clear = new St.Button({ style_class: 'orbit-notif-clear', label: 'Clear' });
-        this._addPress(clear);
-        clear.connect('clicked', () => this._shelf.clear());
-        head.add_child(clear);
+        this._shelfTabMode = 'tasks'; // 'tasks' | 'clips'
+
+        // Segmented header switcher: [✓ Tasks] [📎 Clips]
+        const head = new St.BoxLayout({
+            style_class: 'orbit-shelf-head',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const segBox = new St.BoxLayout({
+            style_class: 'orbit-shelf-seg',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._shelfSegTasks = new St.Button({ style_class: 'orbit-shelf-seg-btn active', label: 'Tasks' });
+        this._shelfSegClips = new St.Button({ style_class: 'orbit-shelf-seg-btn', label: 'Clips' });
+        this._addPress(this._shelfSegTasks);
+        this._addPress(this._shelfSegClips);
+        this._shelfSegTasks.connect('clicked', () => this._switchShelfTab('tasks'));
+        this._shelfSegClips.connect('clicked', () => this._switchShelfTab('clips'));
+        segBox.add_child(this._shelfSegTasks);
+        segBox.add_child(this._shelfSegClips);
+        head.add_child(segBox);
+        head.add_child(new St.Widget({ x_expand: true }));
+
+        this._shelfActionBtn = new St.Button({ style_class: 'orbit-notif-clear', label: 'Clear Done' });
+        this._addPress(this._shelfActionBtn);
+        this._shelfActionBtn.connect('clicked', () => {
+            if (this._shelfTabMode === 'tasks') this._tasks.clearCompleted();
+            else this._shelf.clear();
+        });
+        head.add_child(this._shelfActionBtn);
         this._bodyShelf.add_child(head);
+
+        // Tasks View (active by default)
+        this._tasksBox = new St.BoxLayout({
+            style_class: 'orbit-tasks-box', vertical: true,
+            x_expand: true, y_expand: true,
+        });
+
+        // Input row
+        const entryRow = new St.BoxLayout({
+            style_class: 'orbit-task-input-row',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._taskEntry = new St.Entry({
+            style_class: 'orbit-task-entry',
+            hint_text: '+ Add task or reminder...',
+            can_focus: true,
+            x_expand: true,
+        });
+        this._taskEntry.clutter_text.connect('activate', () => {
+            const txt = this._taskEntry.get_text();
+            if (txt && txt.trim()) {
+                this._tasks.add(txt.trim());
+                this._taskEntry.set_text('');
+            }
+        });
+        entryRow.add_child(this._taskEntry);
+        this._tasksBox.add_child(entryRow);
+
+        this._tasksScroll = new St.ScrollView({
+            style_class: 'orbit-tasks-scroll', x_expand: true, y_expand: true,
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+        });
+        this._tasksList = new St.BoxLayout({
+            style_class: 'orbit-tasks-list', vertical: true, x_expand: true,
+        });
+        this._tasksScroll.set_child(this._tasksList);
+        this._tasksBox.add_child(this._tasksScroll);
+        this._bodyShelf.add_child(this._tasksBox);
+
+        // Clips View
+        this._clipsBox = new St.BoxLayout({
+            style_class: 'orbit-clips-box', vertical: true,
+            x_expand: true, y_expand: true, visible: false,
+        });
+        this._shelfHint = new St.Label({ style_class: 'orbit-shelf-hint', text: 'paste files with Ctrl+V' });
+        this._clipsBox.add_child(this._shelfHint);
 
         this._shelfScroll = new St.ScrollView({
             style_class: 'orbit-shelf-scroll', x_expand: true, y_expand: true,
@@ -579,9 +653,11 @@ class OrbitNotch extends St.Widget {
             vscrollbar_policy: St.PolicyType.NEVER,
         });
         this._shelfStrip = new St.BoxLayout({
-            style_class: 'orbit-shelf-strip', vertical: false, y_align: Clutter.ActorAlign.CENTER });
+            style_class: 'orbit-shelf-strip', vertical: false, y_align: Clutter.ActorAlign.CENTER,
+        });
         this._shelfScroll.set_child(this._shelfStrip);
-        this._bodyShelf.add_child(this._shelfScroll);
+        this._clipsBox.add_child(this._shelfScroll);
+        this._bodyShelf.add_child(this._clipsBox);
 
         this._bodyShelf.connect('key-press-event', (_a, ev) => this._onShelfKey(ev));
         this._openLayer.add_child(this._bodyShelf);
@@ -604,20 +680,56 @@ class OrbitNotch extends St.Widget {
         });
         this._bodyTimer.add_child(this._timerDisplay);
 
-        // Mode row: Stopwatch / Timer
+        // Mode row: Stopwatch / Timer / Focus
         const modeRow = new St.BoxLayout({
             style_class: 'orbit-timer-modes',
             x_align: Clutter.ActorAlign.CENTER,
         });
         this._swBtn = new St.Button({ style_class: 'orbit-timer-mode-btn active', label: 'Stopwatch' });
         this._tmBtn = new St.Button({ style_class: 'orbit-timer-mode-btn', label: 'Timer' });
+        this._fcBtn = new St.Button({ style_class: 'orbit-timer-mode-btn focus', label: '🧠 Focus' });
         this._addPress(this._swBtn);
         this._addPress(this._tmBtn);
+        this._addPress(this._fcBtn);
         this._swBtn.connect('clicked', () => this._setTimerMode('stopwatch'));
         this._tmBtn.connect('clicked', () => this._setTimerMode('countdown'));
+        this._fcBtn.connect('clicked', () => this._setTimerMode('focus'));
         modeRow.add_child(this._swBtn);
         modeRow.add_child(this._tmBtn);
+        modeRow.add_child(this._fcBtn);
         this._bodyTimer.add_child(modeRow);
+
+        // Focus progress bar (iOS style)
+        this._focusBar = new St.BoxLayout({
+            style_class: 'orbit-focus-bar',
+            x_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        this._focusFill = new St.Widget({ style_class: 'orbit-focus-bar-fill', y_expand: true });
+        this._focusBar.add_child(this._focusFill);
+        this._bodyTimer.add_child(this._focusBar);
+
+        // Focus Presets Row (25m Focus, 5m Break, 15m Break)
+        this._focusPresetsRow = new St.BoxLayout({
+            style_class: 'orbit-focus-presets',
+            x_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        this._focusPresets = [
+            { label: '25m Focus', mins: 25, type: 'focus' },
+            { label: '5m Break',  mins: 5,  type: 'break' },
+            { label: '15m Break', mins: 15, type: 'break' },
+        ];
+        this._focusPresetBtns = [];
+        for (const p of this._focusPresets) {
+            const b = new St.Button({ style_class: 'orbit-focus-preset-btn', label: p.label });
+            if (p.mins === 25) b.add_style_class_name('active');
+            this._addPress(b);
+            b.connect('clicked', () => this._setFocusPreset(p));
+            this._focusPresetsRow.add_child(b);
+            this._focusPresetBtns.push({ btn: b, preset: p });
+        }
+        this._bodyTimer.add_child(this._focusPresetsRow);
 
         // Duration adjuster (only for countdown mode)
         this._timerAdjRow = new St.BoxLayout({
@@ -656,9 +768,10 @@ class OrbitNotch extends St.Widget {
         this._bodyTimer.add_child(ctrlRow);
 
         // Internal state
-        this._timerMode    = 'stopwatch';   // 'stopwatch' | 'countdown'
+        this._timerMode    = 'stopwatch';   // 'stopwatch' | 'countdown' | 'focus'
+        this._focusType    = 'focus';       // 'focus' | 'break'
         this._timerRunning = false;
-        this._timerElapsed = 0;             // ms (stopwatch) or ms remaining (countdown)
+        this._timerElapsed = 0;             // ms (stopwatch) or ms elapsed (countdown/focus)
         this._timerTarget  = 5 * 60 * 1000; // default 5 min for countdown
         this._timerTickId  = 0;
         this._timerLastTs  = 0;
@@ -678,11 +791,34 @@ class OrbitNotch extends St.Widget {
         if (this._timerRunning) this._onTimerReset();
         this._timerMode = mode;
         const sw = mode === 'stopwatch';
+        const fc = mode === 'focus';
         this._swBtn.style_class = `orbit-timer-mode-btn${sw ? ' active' : ''}`;
-        this._tmBtn.style_class = `orbit-timer-mode-btn${sw ? '' : ' active'}`;
-        this._timerAdjRow.visible = !sw;
-        this._timerDisplay.text = sw ? '0:00' : this._formatTimer(this._timerTarget);
+        this._tmBtn.style_class = `orbit-timer-mode-btn${mode === 'countdown' ? ' active' : ''}`;
+        this._fcBtn.style_class = `orbit-timer-mode-btn focus${fc ? ' active' : ''}`;
+        this._timerAdjRow.visible = mode === 'countdown';
+        this._focusPresetsRow.visible = fc;
+        this._focusBar.visible = fc;
+        if (fc) {
+            this._setFocusPreset(this._focusPresets[0]);
+        } else {
+            this._timerDisplay.style_class = 'orbit-timer-display';
+            this._timerDisplay.text = sw ? '0:00' : this._formatTimer(this._timerTarget);
+        }
         this._timerElapsed = 0;
+    }
+
+    _setFocusPreset(p) {
+        if (this._timerRunning) this._onTimerReset();
+        this._focusType = p.type;
+        this._timerTarget = p.mins * 60 * 1000;
+        this._timerElapsed = 0;
+        for (const item of this._focusPresetBtns) {
+            if (item.preset === p) item.btn.add_style_class_name('active');
+            else item.btn.remove_style_class_name('active');
+        }
+        this._timerDisplay.style_class = `orbit-timer-display focus ${p.type}`;
+        this._timerDisplay.text = this._formatTimer(this._timerTarget);
+        if (this._focusFill) this._focusFill.set_width(0);
     }
 
     _nudgeTimer(deltaSec) {
@@ -722,6 +858,7 @@ class OrbitNotch extends St.Widget {
         this._timerStartBtn.label = 'Start';
         const dispMs = this._timerMode === 'stopwatch' ? 0 : this._timerTarget;
         this._timerDisplay.text = this._formatTimer(dispMs);
+        if (this._focusFill) this._focusFill.set_width(0);
         if (this._timerPillLabel) this._timerPillLabel.visible = false;
     }
 
@@ -734,13 +871,45 @@ class OrbitNotch extends St.Widget {
             this._timerElapsed += delta;
             const t = this._formatTimer(this._timerElapsed);
             if (this._timerDisplay) this._timerDisplay.text = t;
-            if (this._timerPillLabel) this._timerPillLabel.text = t;
+            if (this._timerPillLabel) {
+                this._timerPillLabel.style_class = 'orbit-timer-pill';
+                this._timerPillLabel.text = t;
+            }
+        } else if (this._timerMode === 'focus') {
+            this._timerElapsed += delta;
+            const remaining = Math.max(0, this._timerTarget - this._timerElapsed);
+            const t = this._formatTimer(remaining);
+            if (this._timerDisplay) this._timerDisplay.text = t;
+            const icon = this._focusType === 'break' ? '☕' : '🧠';
+            if (this._timerPillLabel) {
+                this._timerPillLabel.style_class = `orbit-timer-pill ${this._focusType}`;
+                this._timerPillLabel.text = `${icon} ${t}`;
+            }
+            if (this._focusFill) {
+                const frac = clamp01(this._timerElapsed / Math.max(1, this._timerTarget));
+                this._focusFill.set_width(Math.round(200 * frac));
+            }
+            if (remaining === 0) {
+                this._timerRunning = false;
+                this._timerStartBtn.label = 'Start';
+                this._timerElapsed = 0;
+                if (this._timerPillLabel) this._timerPillLabel.visible = false;
+                const wasFocus = this._focusType === 'focus';
+                const msg = wasFocus ? 'Focus Done! Time for a break ☕' : 'Break Over! Time to focus 🧠';
+                this.showHud('timer-done', null, msg);
+                const nextPreset = wasFocus ? this._focusPresets[1] : this._focusPresets[0];
+                this._setFocusPreset(nextPreset);
+                return;
+            }
         } else {
             this._timerElapsed += delta;
             const remaining = Math.max(0, this._timerTarget - this._timerElapsed);
             const t = this._formatTimer(remaining);
             if (this._timerDisplay) this._timerDisplay.text = t;
-            if (this._timerPillLabel) this._timerPillLabel.text = t;
+            if (this._timerPillLabel) {
+                this._timerPillLabel.style_class = 'orbit-timer-pill';
+                this._timerPillLabel.text = t;
+            }
             if (remaining === 0) {
                 this._timerRunning = false;
                 this._timerStartBtn.label = 'Start';
@@ -760,6 +929,82 @@ class OrbitNotch extends St.Widget {
         const s = total % 60;
         const ss = String(s).padStart(2, '0');
         return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${ss}` : `${m}:${ss}`;
+    }
+
+    _switchShelfTab(tab) {
+        this._shelfTabMode = tab;
+        const isTasks = tab === 'tasks';
+        this._shelfSegTasks.style_class = `orbit-shelf-seg-btn${isTasks ? ' active' : ''}`;
+        this._shelfSegClips.style_class = `orbit-shelf-seg-btn${isTasks ? '' : ' active'}`;
+        this._tasksBox.visible = isTasks;
+        this._clipsBox.visible = !isTasks;
+        this._shelfActionBtn.label = isTasks ? 'Clear Done' : 'Clear';
+        if (isTasks) this._renderTasks();
+        else this._renderShelf();
+    }
+
+    _renderTasks() {
+        if (!this._tasksList) return;
+        this._tasksList.destroy_all_children();
+        const items = this._tasks.tasks();
+        if (items.length === 0) {
+            this._tasksList.add_child(new St.Label({
+                style_class: 'orbit-tasks-empty',
+                text: 'No tasks yet. Type above to add!',
+            }));
+            return;
+        }
+
+        for (const t of items) {
+            const row = new St.BoxLayout({
+                style_class: 'orbit-task-row',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+
+            // Circular checkbox (iOS Reminders style)
+            const chk = new St.Button({
+                style_class: `orbit-task-chk${t.done ? ' done' : ''}`,
+                can_focus: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            if (t.done) {
+                chk.set_child(new St.Icon({
+                    icon_name: 'emblem-ok-symbolic',
+                    icon_size: 11,
+                    y_align: Clutter.ActorAlign.CENTER,
+                }));
+            }
+            this._addPress(chk);
+            chk.connect('clicked', () => this._tasks.toggle(t.id));
+            row.add_child(chk);
+
+            // Title
+            const lbl = new St.Label({
+                style_class: `orbit-task-title${t.done ? ' done' : ''}`,
+                text: t.title,
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            lbl.clutter_text.set_line_wrap(true);
+            row.add_child(lbl);
+
+            // Delete button
+            const del = new St.Button({
+                style_class: 'orbit-task-del',
+                can_focus: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            del.set_child(new St.Icon({
+                icon_name: 'window-close-symbolic',
+                icon_size: 12,
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
+            this._addPress(del);
+            del.connect('clicked', () => this._tasks.remove(t.id));
+            row.add_child(del);
+
+            this._tasksList.add_child(row);
+        }
     }
 
     _renderShelf() {
@@ -950,12 +1195,16 @@ class OrbitNotch extends St.Widget {
         tab.add_style_class_name('active');
         if (view === 'notifs') { this._unread = false; this._updateClosedDot(); this._renderNotifList(); }
         if (view === 'shelf') {
-            this._renderShelf();
+            if (this._shelfTabMode === 'tasks') this._renderTasks();
+            else this._renderShelf();
 
             try { this._pasteTarget = global.display.focus_window; } catch (e) { this._pasteTarget = null; }
 
             this._addTimeout(0, () => {
-                if (this._bodyShelf && this._bodyShelf.visible) this._bodyShelf.grab_key_focus();
+                if (this._bodyShelf && this._bodyShelf.visible) {
+                    if (this._shelfTabMode === 'tasks' && this._taskEntry) this._taskEntry.grab_key_focus();
+                    else this._bodyShelf.grab_key_focus();
+                }
             });
         }
         if (!this._open) this.open();
@@ -1962,6 +2211,51 @@ class OrbitNotch extends St.Widget {
         return `${m}:${sec < 10 ? '0' : ''}${sec}`;
     }
 
+    _onScroll(event) {
+        if (this._open) return Clutter.EVENT_PROPAGATE;
+
+        const dir = event.get_scroll_direction();
+        let step = 0;
+        if (dir === Clutter.ScrollDirection.UP) {
+            step = 1;
+        } else if (dir === Clutter.ScrollDirection.DOWN) {
+            step = -1;
+        } else if (dir === Clutter.ScrollDirection.SMOOTH) {
+            const [, dy] = event.get_scroll_delta();
+            step = dy < 0 ? 1 : (dy > 0 ? -1 : 0);
+        }
+
+        if (step === 0) return Clutter.EVENT_PROPAGATE;
+
+        this._adjustVolume(step);
+        return Clutter.EVENT_STOP;
+    }
+
+    _adjustVolume(step) {
+        let handled = false;
+        try {
+            const qs = Main.panel.statusArea.quickSettings;
+            if (qs) {
+                const indList = qs._indicators || [];
+                for (const ind of indList) {
+                    if (ind?._output?.slider) {
+                        ind._output.slider.step(step);
+                        ind._output.showOSD?.();
+                        handled = true;
+                        break;
+                    }
+                }
+            }
+        } catch (_) {}
+
+        if (!handled) {
+            const delta = step > 0 ? '5%+' : '5%-';
+            try {
+                GLib.spawn_command_line_async(`wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ ${delta}`);
+            } catch (_) {}
+        }
+    }
+
     _onDestroy() {
         this._anim.stop();
         this._clearCloseTimer();
@@ -1977,6 +2271,8 @@ class OrbitNotch extends St.Widget {
         if (this._notifications) { this._notifications.stop(); this._notifications = null; }
         if (this._shelfChangedId) { this._shelf.disconnect(this._shelfChangedId); this._shelfChangedId = 0; }
         if (this._shelf) { this._shelf.stop(); this._shelf = null; }
+        if (this._tasksChangedId) { this._tasks.disconnect(this._tasksChangedId); this._tasksChangedId = 0; }
+        this._tasks = null;
         if (this._shelfSettingId) { this._settings.disconnect(this._shelfSettingId); this._shelfSettingId = 0; }
         if (this._sizeIds) { for (const id of this._sizeIds) this._settings.disconnect(id); this._sizeIds = null; }
         if (this._lyricsSettingId) { this._settings.disconnect(this._lyricsSettingId); this._lyricsSettingId = 0; }

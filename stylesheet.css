@@ -723,3 +723,184 @@
     font-feature-settings: "tnum";
     padding-left: 4px;
 }
+
+.orbit-timer-pill.focus {
+    color: #bf5af2;
+}
+
+.orbit-timer-pill.break {
+    color: #30d158;
+}
+
+.orbit-timer-mode-btn.focus {
+    color: #bf5af2;
+}
+
+.orbit-timer-mode-btn.focus.active {
+    background-color: rgba(191, 90, 242, 0.35);
+    color: #ffffff;
+}
+
+.orbit-timer-display.focus.focus {
+    color: #bf5af2;
+}
+
+.orbit-timer-display.focus.break {
+    color: #30d158;
+}
+
+.orbit-focus-bar {
+    width: 220px;
+    height: 4px;
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.12);
+    margin-top: 2px;
+}
+
+.orbit-focus-bar-fill {
+    height: 4px;
+    border-radius: 999px;
+    background-color: #bf5af2;
+}
+
+.orbit-focus-presets {
+    spacing: 6px;
+    margin-top: 2px;
+}
+
+.orbit-focus-preset-btn {
+    border-radius: 999px;
+    padding: 3px 10px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 11px;
+    font-weight: 500;
+    transition-duration: 150ms;
+}
+
+.orbit-focus-preset-btn:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+.orbit-focus-preset-btn.active {
+    background-color: #bf5af2;
+    color: #ffffff;
+}
+
+/* ── Shelf Tasks / Reminders ────────────────────────────── */
+
+.orbit-shelf-seg {
+    spacing: 4px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.orbit-shelf-seg-btn {
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.55);
+    transition-duration: 150ms;
+}
+
+.orbit-shelf-seg-btn:hover {
+    color: #ffffff;
+}
+
+.orbit-shelf-seg-btn.active {
+    background-color: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+}
+
+.orbit-tasks-box {
+    spacing: 6px;
+}
+
+.orbit-task-input-row {
+    padding: 2px 0 4px 0;
+}
+
+.orbit-task-entry {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: #ffffff;
+    font-size: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.orbit-task-entry:focus {
+    border-color: rgba(255, 255, 255, 0.3);
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.orbit-tasks-scroll {
+    max-height: 140px;
+}
+
+.orbit-tasks-list {
+    spacing: 5px;
+}
+
+.orbit-task-row {
+    spacing: 10px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.04);
+    transition-duration: 120ms;
+}
+
+.orbit-task-row:hover {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+
+.orbit-task-chk {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    background-color: transparent;
+    padding: 0;
+}
+
+.orbit-task-chk:hover {
+    border-color: rgba(255, 255, 255, 0.75);
+}
+
+.orbit-task-chk.done {
+    background-color: #30d158;
+    border-color: #30d158;
+    color: #ffffff;
+}
+
+.orbit-task-title {
+    font-size: 13px;
+    color: #ffffff;
+    font-weight: 400;
+}
+
+.orbit-task-title.done {
+    color: rgba(255, 255, 255, 0.35);
+    text-decoration: line-through;
+}
+
+.orbit-task-del {
+    border-radius: 999px;
+    padding: 4px;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.orbit-task-del:hover {
+    color: #ff453a;
+    background-color: rgba(255, 69, 58, 0.15);
+}
+
+.orbit-tasks-empty {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
+    padding: 16px 0;
+}
