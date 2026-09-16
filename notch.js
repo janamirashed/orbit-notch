@@ -153,6 +153,10 @@ class OrbitNotch extends St.Widget {
         this._hoverId = this.connect('notify::hover', () => this._onHover());
         this.connect('button-press-event', () => this._onClick());
         this.connect('scroll-event', (_actor, event) => this._onScroll(event));
+        this.connect('key-press-event', (_actor, event) => {
+            if (this._open) return this._onOpenLayerKey(event);
+            return Clutter.EVENT_PROPAGATE;
+        });
         this._mediaId = this._media.connect('changed', () => this._onMediaChanged());
 
         this._tickId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
@@ -449,12 +453,21 @@ class OrbitNotch extends St.Widget {
             reactive: false,
             opacity: 0,
             x_expand: true, y_expand: true,
+            can_focus: true,
         });
+        this._openLayer.connect('key-press-event', (_a, ev) => this._onOpenLayerKey(ev));
         this._openLayer.add_child(this._buildHeader());
 
         const body = new St.BoxLayout({
             style_class: 'orbit-body', vertical: false,
             x_expand: true, y_expand: true,
+            can_focus: true,
+            reactive: true,
+        });
+        body.connect('key-press-event', (_a, ev) => this._onOpenLayerKey(ev));
+        body.connect('button-press-event', () => {
+            body.grab_key_focus();
+            return Clutter.EVENT_PROPAGATE;
         });
         this._bodyMedia = body;
 
@@ -1092,6 +1105,85 @@ class OrbitNotch extends St.Widget {
         return Clutter.EVENT_PROPAGATE;
     }
 
+    _onOpenLayerKey(ev) {
+        if (this._view === 'shelf' && this._shelfTabMode === 'tasks' && this._taskEntry && this._taskEntry.has_key_focus()) {
+            return Clutter.EVENT_PROPAGATE;
+        }
+
+        const sym = ev.get_key_symbol();
+        const state = ev.get_state();
+        const ctrl = (state & Clutter.ModifierType.CONTROL_MASK) !== 0;
+        const shift = (state & Clutter.ModifierType.SHIFT_MASK) !== 0;
+
+        if (sym === Clutter.KEY_Escape) {
+            this.close();
+            return Clutter.EVENT_STOP;
+        }
+
+        if (!ctrl && !shift) {
+            if (sym === Clutter.KEY_1) { this.showView('media'); return Clutter.EVENT_STOP; }
+            if (sym === Clutter.KEY_2) { this.showView('shelf'); return Clutter.EVENT_STOP; }
+            if (sym === Clutter.KEY_3) { this.showView('notifs'); return Clutter.EVENT_STOP; }
+            if (sym === Clutter.KEY_4) { this.showView('timer'); return Clutter.EVENT_STOP; }
+        }
+
+        if (this._view === 'media') {
+            if (sym === Clutter.KEY_space || sym === Clutter.KEY_k || sym === Clutter.KEY_K) {
+                this._media.playPause();
+                return Clutter.EVENT_STOP;
+            }
+
+            if (sym === Clutter.KEY_Right) {
+                if (shift || ctrl) {
+                    this._media.seekRelative(5000000);
+                } else {
+                    if (this._nextBtn) this._slideIcon(this._nextBtn, 1);
+                    this._media.next();
+                }
+                return Clutter.EVENT_STOP;
+            }
+            if ((sym === Clutter.KEY_n || sym === Clutter.KEY_N) && !ctrl) {
+                if (this._nextBtn) this._slideIcon(this._nextBtn, 1);
+                this._media.next();
+                return Clutter.EVENT_STOP;
+            }
+
+            if (sym === Clutter.KEY_Left) {
+                if (shift || ctrl) {
+                    this._media.seekRelative(-5000000);
+                } else {
+                    if (this._prevBtn) this._slideIcon(this._prevBtn, -1);
+                    this._media.previous();
+                }
+                return Clutter.EVENT_STOP;
+            }
+            if ((sym === Clutter.KEY_p || sym === Clutter.KEY_P) && !ctrl) {
+                if (this._prevBtn) this._slideIcon(this._prevBtn, -1);
+                this._media.previous();
+                return Clutter.EVENT_STOP;
+            }
+
+            if (sym === Clutter.KEY_Up) {
+                this._adjustVolume(1);
+                return Clutter.EVENT_STOP;
+            }
+
+            if (sym === Clutter.KEY_Down) {
+                this._adjustVolume(-1);
+                return Clutter.EVENT_STOP;
+            }
+
+            if ((sym === Clutter.KEY_l || sym === Clutter.KEY_L) && !ctrl && !shift) {
+                if (this._settings.get_boolean('enable-lyrics')) {
+                    this._toggleLyricsMode();
+                    return Clutter.EVENT_STOP;
+                }
+            }
+        }
+
+        return Clutter.EVENT_PROPAGATE;
+    }
+
     _putOnClipboard(it) {
         const clip = St.Clipboard.get_default();
         if (it.isImage) {
@@ -1212,7 +1304,18 @@ class OrbitNotch extends St.Widget {
             : view === 'timer'  ? this._timerTab
             : this._bellTab;
         tab.add_style_class_name('active');
-        if (view === 'notifs') { this._unread = false; this._updateClosedDot(); this._renderNotifList(); }
+        if (view === 'media') {
+            this._addTimeout(0, () => {
+                if (this._bodyMedia && this._bodyMedia.visible) {
+                    this._bodyMedia.grab_key_focus();
+                }
+            });
+        }
+        if (view === 'notifs') {
+            this._unread = false;
+            this._updateClosedDot();
+            this._renderNotifList();
+        }
         if (view === 'shelf') {
             if (this._shelfTabMode === 'tasks') this._renderTasks();
             else this._renderShelf();
@@ -1248,7 +1351,9 @@ class OrbitNotch extends St.Widget {
 
         const head = new St.BoxLayout({ style_class: 'orbit-ng-head', x_expand: true });
         const icon = new St.Icon({ style_class: 'orbit-ng-icon', icon_size: 16, y_align: Clutter.ActorAlign.CENTER });
-        if (g.gicon) icon.set_gicon(g.gicon); else icon.icon_name = 'dialog-information-symbolic';
+        if (g.gicon && (g.gicon instanceof Gio.Icon)) icon.set_gicon(g.gicon);
+        else if (typeof g.gicon === 'string' && g.gicon) icon.icon_name = g.gicon;
+        else icon.icon_name = 'dialog-information-symbolic';
         head.add_child(icon);
         head.add_child(new St.Label({
             style_class: 'orbit-ng-name', text: g.appName, x_expand: true,
@@ -1302,7 +1407,9 @@ class OrbitNotch extends St.Widget {
         const box = new St.BoxLayout({ x_expand: true });
 
         const icon = new St.Icon({ style_class: 'orbit-notif-icon', icon_size: 24, y_align: Clutter.ActorAlign.START });
-        if (item.gicon) icon.set_gicon(item.gicon); else icon.icon_name = 'dialog-information-symbolic';
+        if (item.gicon && (item.gicon instanceof Gio.Icon)) icon.set_gicon(item.gicon);
+        else if (typeof item.gicon === 'string' && item.gicon) icon.icon_name = item.gicon;
+        else icon.icon_name = 'dialog-information-symbolic';
         box.add_child(icon);
 
         const txt = new St.BoxLayout({ vertical: true, x_expand: true, style_class: 'orbit-notif-txt' });
@@ -1842,11 +1949,19 @@ class OrbitNotch extends St.Widget {
         this._startGradient();
         this._animateGeom(this._openW, this._openH, SPRINGS.open);
         this._refreshLyricsTimer();
+        if (this._view === 'media' && this._bodyMedia) {
+            this._addTimeout(50, () => {
+                if (this._open && this._view === 'media') {
+                    this._bodyMedia.grab_key_focus();
+                }
+            });
+        }
     }
 
     close() {
         if (!this._open) return;
         this._open = false;
+        try { global.stage.set_key_focus(null); } catch (_) {}
         this._stopGradient();
         this._refreshLyricsTimer();
 

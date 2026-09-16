@@ -57,9 +57,17 @@ export const OrbitNotifications = GObject.registerClass({
             this._sourceConns.delete(source);
         });
         this._sourceConns.set(source, { addedId, destroyId });
+
+        if (Array.isArray(source.notifications)) {
+            for (const n of source.notifications) {
+                if (!this._items.some(it => it.notif === n)) {
+                    this._onNotif(source, n, true);
+                }
+            }
+        }
     }
 
-    _onNotif(source, n) {
+    _onNotif(source, n, isInitial = false) {
         const appName = (source && source.title) || '';
 
         if (this._settings) {
@@ -125,15 +133,11 @@ export const OrbitNotifications = GObject.registerClass({
 
         item.destroyId = n.connect('destroy', () => {
             item.destroyId = 0;
-            const idx = this._items.indexOf(item);
-            if (idx >= 0) {
-                this._items.splice(idx, 1);
-                if (!this._bulk) this.emit('changed');
-            }
+            item.notif = null;
         });
         this._items.unshift(item);
         while (this._items.length > 30) this._unhook(this._items.pop());
-        this.emit('arrived', item);
+        if (!isInitial) this.emit('arrived', item);
         this.emit('changed');
     }
 

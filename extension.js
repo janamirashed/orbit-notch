@@ -1,5 +1,7 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
@@ -39,6 +41,7 @@ export default class OrbitExtension extends Extension {
         this._startBrightnessWatcher();
         this._startPrivacyWatcher();
         this._startBluetoothWatcher();
+        this._initShortcuts();
     }
 
     // Fallback brightness watcher — GSD Power.Screen PropertiesChanged on session bus.
@@ -352,6 +355,7 @@ export default class OrbitExtension extends Extension {
         this._stopBrightnessWatcher();
         this._stopPrivacyWatcher();
         this._stopBluetoothWatcher();
+        this._destroyShortcuts();
         if (this._notch) {
             Main.layoutManager.removeChrome(this._notch);
             this._notch.destroy();
@@ -363,5 +367,63 @@ export default class OrbitExtension extends Extension {
         }
         SharedVisualizerEngine.destroy();
         this._settings = null;
+    }
+
+    _initShortcuts() {
+        const bindings = [
+            {
+                name: 'shortcut-play-pause',
+                handler: () => {
+                    if (this._media) this._media.playPause();
+                },
+            },
+            {
+                name: 'shortcut-next',
+                handler: () => {
+                    if (this._media) this._media.next();
+                },
+            },
+            {
+                name: 'shortcut-previous',
+                handler: () => {
+                    if (this._media) this._media.previous();
+                },
+            },
+            {
+                name: 'shortcut-toggle-notch',
+                handler: () => {
+                    if (this._notch) {
+                        if (this._notch._open) this._notch.close();
+                        else this._notch.open();
+                    }
+                },
+            },
+        ];
+
+        this._boundShortcuts = [];
+        for (const b of bindings) {
+            try {
+                Main.wm.addKeybinding(
+                    b.name,
+                    this._settings,
+                    Meta.KeyBindingFlags.NONE,
+                    Shell.ActionMode.ALL,
+                    b.handler
+                );
+                this._boundShortcuts.push(b.name);
+            } catch (e) {
+                console.warn(`OrbitDynamicIsland: Failed to bind ${b.name}: ${e.message}`);
+            }
+        }
+    }
+
+    _destroyShortcuts() {
+        if (!this._boundShortcuts) return;
+        for (const name of this._boundShortcuts) {
+            try {
+                Main.wm.removeKeybinding(name);
+            } catch (_) {}
+        }
+        this._boundShortcuts = [];
     }
 }

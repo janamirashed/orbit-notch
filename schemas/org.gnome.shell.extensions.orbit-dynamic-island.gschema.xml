@@ -152,5 +152,29 @@
       <description>Persisted state of lyrics mode: when on, the collapsed notch widens to show album art, scrolling lyrics and a visualizer.</description>
     </key>
 
+    <key name="shortcut-play-pause" type="as">
+      <default>['&lt;Control&gt;&lt;Alt&gt;space']</default>
+      <summary>Play/Pause Shortcut</summary>
+      <description>Global keyboard shortcut to toggle media play/pause.</description>
+    </key>
+
+    <key name="shortcut-next" type="as">
+      <default>['&lt;Control&gt;&lt;Alt&gt;Right']</default>
+      <summary>Next Track Shortcut</summary>
+      <description>Global keyboard shortcut to skip to next media track.</description>
+    </key>
+
+    <key name="shortcut-previous" type="as">
+      <default>['&lt;Control&gt;&lt;Alt&gt;Left']</default>
+      <summary>Previous Track Shortcut</summary>
+      <description>Global keyboard shortcut to skip to previous media track.</description>
+    </key>
+
+    <key name="shortcut-toggle-notch" type="as">
+      <default>['&lt;Control&gt;&lt;Alt&gt;o']</default>
+      <summary>Toggle Notch Shortcut</summary>
+      <description>Global keyboard shortcut to expand or collapse the notch.</description>
+    </key>
+
   </schema>
 </schemalist>
