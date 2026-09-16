@@ -631,6 +631,13 @@
 
 .orbit-timer-body {
     padding: 4px 14px 10px;
+}
+
+.orbit-timer-scroll {
+    max-height: 100%;
+}
+
+.orbit-timer-inner {
     spacing: 10px;
 }
 

@@ -668,8 +668,25 @@ class OrbitNotch extends St.Widget {
             style_class: 'orbit-timer-body',
             vertical: true,
             x_expand: true, y_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
             visible: false,
+        });
+
+        // Scroll container so Focus mode's extra rows (progress bar + presets)
+        // never push the Start/Reset controls out of reach.
+        this._timerScroll = new St.ScrollView({
+            style_class: 'orbit-timer-scroll',
+            x_expand: true, y_expand: true,
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+        });
+
+        // Inner box holds the actual timer contents and is vertically centered
+        // when short, but scrolls when it overflows the available height.
+        this._timerInner = new St.BoxLayout({
+            style_class: 'orbit-timer-inner',
+            vertical: true,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
         });
 
         // Big display (shows running time)
@@ -678,7 +695,7 @@ class OrbitNotch extends St.Widget {
             text: '0:00',
             x_align: Clutter.ActorAlign.CENTER,
         });
-        this._bodyTimer.add_child(this._timerDisplay);
+        this._timerInner.add_child(this._timerDisplay);
 
         // Mode row: Stopwatch / Timer / Focus
         const modeRow = new St.BoxLayout({
@@ -687,7 +704,7 @@ class OrbitNotch extends St.Widget {
         });
         this._swBtn = new St.Button({ style_class: 'orbit-timer-mode-btn active', label: 'Stopwatch' });
         this._tmBtn = new St.Button({ style_class: 'orbit-timer-mode-btn', label: 'Timer' });
-        this._fcBtn = new St.Button({ style_class: 'orbit-timer-mode-btn focus', label: '🧠 Focus' });
+        this._fcBtn = new St.Button({ style_class: 'orbit-timer-mode-btn focus', label: 'Focus' });
         this._addPress(this._swBtn);
         this._addPress(this._tmBtn);
         this._addPress(this._fcBtn);
@@ -697,7 +714,7 @@ class OrbitNotch extends St.Widget {
         modeRow.add_child(this._swBtn);
         modeRow.add_child(this._tmBtn);
         modeRow.add_child(this._fcBtn);
-        this._bodyTimer.add_child(modeRow);
+        this._timerInner.add_child(modeRow);
 
         // Focus progress bar (iOS style)
         this._focusBar = new St.BoxLayout({
@@ -707,7 +724,7 @@ class OrbitNotch extends St.Widget {
         });
         this._focusFill = new St.Widget({ style_class: 'orbit-focus-bar-fill', y_expand: true });
         this._focusBar.add_child(this._focusFill);
-        this._bodyTimer.add_child(this._focusBar);
+        this._timerInner.add_child(this._focusBar);
 
         // Focus Presets Row (25m Focus, 5m Break, 15m Break)
         this._focusPresetsRow = new St.BoxLayout({
@@ -729,7 +746,7 @@ class OrbitNotch extends St.Widget {
             this._focusPresetsRow.add_child(b);
             this._focusPresetBtns.push({ btn: b, preset: p });
         }
-        this._bodyTimer.add_child(this._focusPresetsRow);
+        this._timerInner.add_child(this._focusPresetsRow);
 
         // Duration adjuster (only for countdown mode)
         this._timerAdjRow = new St.BoxLayout({
@@ -750,7 +767,7 @@ class OrbitNotch extends St.Widget {
         this._timerAdjRow.add_child(secDown);
         this._timerAdjRow.add_child(this._timerSecsLabel);
         this._timerAdjRow.add_child(secUp);
-        this._bodyTimer.add_child(this._timerAdjRow);
+        this._timerInner.add_child(this._timerAdjRow);
 
         // Control buttons
         const ctrlRow = new St.BoxLayout({
@@ -765,7 +782,10 @@ class OrbitNotch extends St.Widget {
         this._timerResetBtn.connect('clicked', () => this._onTimerReset());
         ctrlRow.add_child(this._timerStartBtn);
         ctrlRow.add_child(this._timerResetBtn);
-        this._bodyTimer.add_child(ctrlRow);
+        this._timerInner.add_child(ctrlRow);
+
+        this._timerScroll.set_child(this._timerInner);
+        this._bodyTimer.add_child(this._timerScroll);
 
         // Internal state
         this._timerMode    = 'stopwatch';   // 'stopwatch' | 'countdown' | 'focus'
@@ -880,10 +900,9 @@ class OrbitNotch extends St.Widget {
             const remaining = Math.max(0, this._timerTarget - this._timerElapsed);
             const t = this._formatTimer(remaining);
             if (this._timerDisplay) this._timerDisplay.text = t;
-            const icon = this._focusType === 'break' ? '☕' : '🧠';
             if (this._timerPillLabel) {
                 this._timerPillLabel.style_class = `orbit-timer-pill ${this._focusType}`;
-                this._timerPillLabel.text = `${icon} ${t}`;
+                this._timerPillLabel.text = t;
             }
             if (this._focusFill) {
                 const frac = clamp01(this._timerElapsed / Math.max(1, this._timerTarget));
@@ -895,7 +914,7 @@ class OrbitNotch extends St.Widget {
                 this._timerElapsed = 0;
                 if (this._timerPillLabel) this._timerPillLabel.visible = false;
                 const wasFocus = this._focusType === 'focus';
-                const msg = wasFocus ? 'Focus Done! Time for a break ☕' : 'Break Over! Time to focus 🧠';
+                const msg = wasFocus ? 'Focus Done! Time for a break' : 'Break Over! Time to focus';
                 this.showHud('timer-done', null, msg);
                 const nextPreset = wasFocus ? this._focusPresets[1] : this._focusPresets[0];
                 this._setFocusPreset(nextPreset);
@@ -1263,6 +1282,20 @@ class OrbitNotch extends St.Widget {
         return wrap;
     }
 
+    // Notification bodies are allowed a small Pango markup subset (<b>, <i>, <u>)
+    // per the freedesktop notification spec. Apps like prayer-time trackers rely
+    // on this to bold the time. Falls back to plain text if markup is malformed.
+    _setMarkupSafe(label, text) {
+        const str = text || '';
+        try {
+            label.clutter_text.set_use_markup(true);
+            label.clutter_text.set_markup(str);
+        } catch (e) {
+            label.clutter_text.set_use_markup(false);
+            label.text = str;
+        }
+    }
+
     _notifItemRow(item) {
         const full = this._expandedItems.has(item.id);
         const row = new St.Button({ style_class: 'orbit-notif-row', x_expand: true, can_focus: true });
@@ -1278,9 +1311,10 @@ class OrbitNotch extends St.Widget {
         else t.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
         txt.add_child(t);
         if (item.body) {
-            const b = new St.Label({ style_class: 'orbit-notif-row-body', text: item.body });
+            const b = new St.Label({ style_class: 'orbit-notif-row-body' });
             if (full) b.clutter_text.set_line_wrap(true);
             else b.clutter_text.set_ellipsize(Pango.EllipsizeMode.END);
+            this._setMarkupSafe(b, item.body);
             txt.add_child(b);
         }
         box.add_child(txt);
@@ -1666,7 +1700,7 @@ class OrbitNotch extends St.Widget {
         if (item.gicon) this._peekIcon.set_gicon(item.gicon);
         else this._peekIcon.icon_name = 'dialog-information-symbolic';
         this._peekTitle.text = item.title || item.appName || '';
-        this._peekBody.text = item.body || '';
+        this._setMarkupSafe(this._peekBody, item.body);
         this._peekBody.visible = !!item.body;
         this._peekTime.text = item.appName || '';
     }

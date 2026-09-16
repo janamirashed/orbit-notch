@@ -44,6 +44,43 @@ export const OrbitCalendar = GObject.registerClass({
         const d = startOfDay(new Date());
         d.setDate(d.getDate() - d.getDay());
         this._anchor = d;
+
+        // System accent color — mirrors GNOME's Settings > Appearance > Accent Color
+        this._accentSettings = null;
+        this._accentSignalId = 0;
+        this._accentColor = '#2f88ff'; // fallback if the schema/key isn't available
+        this._initAccentColor();
+    }
+
+    _initAccentColor() {
+        const ACCENT_HEX = {
+            blue:   '#3584e4',
+            teal:   '#2190a4',
+            green:  '#3a944a',
+            yellow: '#c88800',
+            orange: '#ed5b00',
+            red:    '#e62d42',
+            pink:   '#d56199',
+            purple: '#9141ac',
+            slate:  '#6f8396',
+        };
+        this._accentHexMap = ACCENT_HEX;
+        try {
+            this._accentSettings = new Gio.Settings({ schema_id: 'org.gnome.desktop.interface' });
+            this._applyAccentColor();
+            this._accentSignalId = this._accentSettings.connect('changed::accent-color', () => {
+                this._applyAccentColor();
+                this.emit('updated');
+            });
+        } catch (e) {
+            console.debug(`orbit: accent-color settings unavailable: ${e.message}`);
+        }
+    }
+
+    _applyAccentColor() {
+        let name = 'blue';
+        try { name = this._accentSettings.get_string('accent-color') || 'blue'; } catch (e) {}
+        this._accentColor = this._accentHexMap[name] ?? this._accentHexMap.blue;
     }
 
     start() {
@@ -73,6 +110,11 @@ export const OrbitCalendar = GObject.registerClass({
             this._proxy = null;
         }
         this._events = [];
+        if (this._accentSettings && this._accentSignalId) {
+            this._accentSettings.disconnect(this._accentSignalId);
+            this._accentSignalId = 0;
+        }
+        this._accentSettings = null;
     }
 
     _requestRange() { this._requestRangeAround(this._anchor); }
@@ -186,16 +228,19 @@ export const OrbitCalendar = GObject.registerClass({
 
             const cell = new St.Button({ style_class: 'orbit-cal-cell', can_focus: true });
             const col = new St.BoxLayout({ vertical: true, x_align: Clutter.ActorAlign.CENTER });
-            col.add_child(new St.Label({
+            const wdLabel = new St.Label({
                 style_class: isToday ? 'orbit-cal-wd today' : 'orbit-cal-wd',
                 text: WEEKDAYS[d.getDay()],
                 x_align: Clutter.ActorAlign.CENTER,
-            }));
+            });
+            if (isToday) wdLabel.set_style(`color: ${this._accentColor};`);
+            col.add_child(wdLabel);
 
             let discClass = 'orbit-cal-disc';
             if (isToday) discClass += ' today';
             else if (isSel) discClass += ' sel';
             const disc = new St.Bin({ style_class: discClass, x_align: Clutter.ActorAlign.CENTER });
+            if (isToday) disc.set_style(`background-color: ${this._accentColor};`);
             disc.set_size(30, 30);
             const num = new St.Label({ style_class: 'orbit-cal-num', text: `${d.getDate()}` });
             num.clutter_text.set_line_alignment(Pango.Alignment.CENTER);
