@@ -1,11 +1,10 @@
 {
     "uuid": "orbit-dynamic-island@janamirashed",
     "name": "Orbit Dynamic Island",
-    "description": "Customized notch and dynamic island: media controls, calendar, notifications, shelf, and synced lyrics.",
+    "description": "An iOS-inspired Dynamic Island and notch for GNOME Shell featuring system OSD HUD intercepts, MPRIS media controls, synced lyrics, Pomodoro focus timer, tasks checklist, and notification peeks.",
     "shell-version": ["49", "50"],
-    "url": "https://github.com/Unmade760/orbit-notch",
+    "url": "https://github.com/janamirashed/orbit-notch",
     "version-name": "1.0.0-custom",
     "settings-schema": "org.gnome.shell.extensions.orbit-dynamic-island",
     "gettext-domain": "orbit-dynamic-island"
 }
-
