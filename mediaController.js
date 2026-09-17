@@ -177,12 +177,26 @@ export const OrbitMediaController = GObject.registerClass({
 
         const scored = arr.map(p => {
             let score = 0, hasTitle = false;
+            let title = '';
             try {
                 const m = p.Metadata ? unpack(p.Metadata) : null;
-                hasTitle = !!(m && m['xesam:title'] && unpack(m['xesam:title']));
+                if (m) {
+                    title = m['xesam:title'] ? String(unpack(m['xesam:title']) || '').trim() : '';
+                    if (!title && m['mpris:trackid']) {
+                        const tid = String(unpack(m['mpris:trackid']) || '');
+                        if (tid && !tid.endsWith('/NoTrack')) title = tid;
+                    }
+                }
+                hasTitle = !!title;
             } catch (e) {}
-            if (p.PlaybackStatus === 'Playing' && hasTitle) score = 500;
-            else if (p.PlaybackStatus === 'Paused' && hasTitle) score = 100;
+
+            if (p.PlaybackStatus === 'Playing') {
+                score = hasTitle ? 500 : 400;
+            } else if (p.PlaybackStatus === 'Paused') {
+                score = hasTitle ? 100 : 50;
+            } else if (hasTitle) {
+                score = 10;
+            }
             return { p, score };
         }).sort((a, b) =>
             b.score !== a.score ? b.score - a.score
@@ -200,12 +214,26 @@ export const OrbitMediaController = GObject.registerClass({
         let title = '', artist = '', artUrl = '', lengthUs = 0;
         try {
             const m = p.Metadata ? unpack(p.Metadata) : {};
-            title = m['xesam:title'] ? unpack(m['xesam:title']) : '';
+            title = m['xesam:title'] ? String(unpack(m['xesam:title']) || '').trim() : '';
             let a = m['xesam:artist'] ? unpack(m['xesam:artist']) : '';
-            artist = Array.isArray(a) ? a.join(', ') : a;
-            artUrl = m['mpris:artUrl'] ? unpack(m['mpris:artUrl']) : '';
+            artist = Array.isArray(a) ? a.filter(Boolean).join(', ') : (typeof a === 'string' ? a.trim() : '');
+            if (!artist && m['xesam:albumArtist']) {
+                const aa = unpack(m['xesam:albumArtist']);
+                artist = Array.isArray(aa) ? aa.filter(Boolean).join(', ') : (typeof aa === 'string' ? aa.trim() : '');
+            }
+            if (!artist && m['xesam:album']) {
+                artist = String(unpack(m['xesam:album']) || '').trim();
+            }
+            artUrl = m['mpris:artUrl'] ? String(unpack(m['mpris:artUrl']) || '').trim() : '';
             lengthUs = m['mpris:length'] ? Number(unpack(m['mpris:length'])) : 0;
         } catch (e) {}
+
+        if (!title && p.Identity) {
+            title = String(p.Identity || '').trim();
+        }
+        if (!title && p._busName) {
+            title = p._busName.replace('org.mpris.MediaPlayer2.', '');
+        }
 
         const status = p.PlaybackStatus || 'Stopped';
         let positionUs = p._lastPosition;
